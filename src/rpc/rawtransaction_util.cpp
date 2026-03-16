@@ -348,35 +348,44 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
 {
     std::optional<std::string> maybe_skip{};
     if (opts.elision_description) maybe_skip.emplace();
+    const std::string vin_item_doc{opts.vin_item_doc.value_or("utxo being spent")};
+    const std::string prevout_doc{opts.prevout_doc.value_or("The previous output, omitted if block undo data is not available")};
+    const std::string fee_doc{opts.fee_doc.value_or("transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available")};
+
+    // When vin_elision is set, elide top-level fields and vin inner fields,
+    // but show the vin array with prevout expanded.
+    std::optional<std::string> vin_item_skip{};
+    if (opts.vin_elision) vin_item_skip.emplace();
+
     return Cat(
         {
-            RPCResult{RPCResult::Type::STR_HEX, "txid", opts.txid_field_doc, {}, {.print_elision=opts.elision_description}},
-            RPCResult{RPCResult::Type::STR_HEX, "hash", "The transaction hash (differs from txid for witness transactions)", {}, {.print_elision=maybe_skip}},
-            {RPCResult::Type::NUM, "size", "The serialized transaction size", {}, {.print_elision=maybe_skip}},
-            {RPCResult::Type::NUM, "vsize", "The virtual transaction size (differs from size for witness transactions)", {}, {.print_elision=maybe_skip}},
-            {RPCResult::Type::NUM, "weight", "The transaction's weight (between vsize*4-3 and vsize*4)", {}, {.print_elision=maybe_skip}},
-            {RPCResult::Type::NUM, "version", "The version", {}, {.print_elision=maybe_skip}},
-            {RPCResult::Type::NUM_TIME, "locktime", "The lock time", {}, {.print_elision=maybe_skip}},
+            RPCResult{RPCResult::Type::STR_HEX, "txid", opts.txid_field_doc, {}, {.print_elision=opts.elision_description ? opts.elision_description : (opts.vin_elision ? std::optional<std::string>{std::string{}} : std::nullopt)}},
+            RPCResult{RPCResult::Type::STR_HEX, "hash", "The transaction hash (differs from txid for witness transactions)", {}, {.print_elision=maybe_skip ? maybe_skip : (opts.vin_elision ? std::optional<std::string>{std::string{}} : std::nullopt)}},
+            {RPCResult::Type::NUM, "size", "The serialized transaction size", {}, {.print_elision=maybe_skip ? maybe_skip : (opts.vin_elision ? std::optional<std::string>{std::string{}} : std::nullopt)}},
+            {RPCResult::Type::NUM, "vsize", "The virtual transaction size (differs from size for witness transactions)", {}, {.print_elision=maybe_skip ? maybe_skip : (opts.vin_elision ? std::optional<std::string>{std::string{}} : std::nullopt)}},
+            {RPCResult::Type::NUM, "weight", "The transaction's weight (between vsize*4-3 and vsize*4)", {}, {.print_elision=maybe_skip ? maybe_skip : (opts.vin_elision ? std::optional<std::string>{std::string{}} : std::nullopt)}},
+            {RPCResult::Type::NUM, "version", "The version", {}, {.print_elision=maybe_skip ? maybe_skip : (opts.vin_elision ? std::optional<std::string>{std::string{}} : std::nullopt)}},
+            {RPCResult::Type::NUM_TIME, "locktime", "The lock time", {}, {.print_elision=maybe_skip ? maybe_skip : (opts.vin_elision ? std::optional<std::string>{std::string{}} : std::nullopt)}},
             {RPCResult::Type::ARR, "vin", "",
             {
-                {RPCResult::Type::OBJ, "", "", Cat(
+                {RPCResult::Type::OBJ, "", opts.vin_elision ? vin_item_doc : "", Cat(
                     {
-                        {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
-                        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
-                        {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
+                        {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)", {}, {.print_elision=vin_item_skip ? *opts.vin_elision : std::optional<std::string>{}}},
+                        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)", {}, {.print_elision=vin_item_skip}},
+                        {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)", {}, {.print_elision=vin_item_skip}},
                         {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
                         {
                             {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
                             {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
-                        }},
+                        }, {.print_elision=vin_item_skip}},
                         {RPCResult::Type::ARR, "txinwitness", /*optional=*/true, "",
                         {
                             {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
-                        }},
+                        }, {.print_elision=vin_item_skip}},
                     },
                     Cat(
                         opts.prevout ?
-                            std::vector<RPCResult>{{RPCResult::Type::OBJ, "prevout", /*optional=*/true, "The previous output, omitted if block undo data is not available",
+                            std::vector<RPCResult>{{RPCResult::Type::OBJ, "prevout", /*optional=*/opts.prevout_optional, prevout_doc,
                             {
                                 {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
                                 {RPCResult::Type::NUM, "height", "The height of the prevout"},
@@ -384,7 +393,7 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
                                 {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
                             }}} :
                             std::vector<RPCResult>{},
-                        std::vector<RPCResult>{{RPCResult::Type::NUM, "sequence", "The script sequence number"}}
+                        std::vector<RPCResult>{{RPCResult::Type::NUM, "sequence", "The script sequence number", {}, {.print_elision=vin_item_skip}}}
                     )
                 )},
             }, {.print_elision=maybe_skip}},
@@ -400,11 +409,11 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
                         std::vector<RPCResult>{{RPCResult::Type::BOOL, "ischange", /*optional=*/true, "Output script is change (only present if true)"}} :
                         std::vector<RPCResult>{}
                 )},
-            }, {.print_elision=maybe_skip}},
+            }, {.print_elision=maybe_skip ? maybe_skip : (opts.vin_elision ? std::optional<std::string>{std::string{}} : std::nullopt)}},
         },
         Cat(
             opts.fee ?
-                std::vector<RPCResult>{{RPCResult::Type::NUM, "fee", /*optional=*/true, "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"}} :
+                std::vector<RPCResult>{{RPCResult::Type::NUM, "fee", /*optional=*/true, fee_doc}} :
                 std::vector<RPCResult>{},
             opts.hex ?
                 std::vector<RPCResult>{{RPCResult::Type::STR_HEX, "hex", "The hex-encoded transaction data"}} :
