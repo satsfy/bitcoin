@@ -1017,14 +1017,15 @@ void RPCResult::ToSections(Sections& sections, const OuterType outer_type, const
 
     // Ensure at least one elision description exists, if there is any elision
     const auto elision_has_description{[](const std::vector<RPCResult>& inner) {
-        return std::ranges::none_of(inner, [](const auto& res) { return res.m_opts.print_elision.has_value(); }) ||
-               std::ranges::any_of(inner, [](const auto& res) { return res.m_opts.print_elision.has_value() && !res.m_opts.print_elision->empty(); });
+        return std::ranges::none_of(inner, [](const auto& res) { return res.m_opts.help_elision != HelpElision::NONE; }) ||
+               std::ranges::any_of(inner, [](const auto& res) { return res.m_opts.help_elision == HelpElision::START; });
     }};
 
-    if (m_opts.print_elision) {
-        if (!m_opts.print_elision->empty()) {
-            sections.PushSection({indent + "..." + maybe_separator, *m_opts.print_elision});
-        }
+    if (m_opts.help_elision == HelpElision::START) {
+        sections.PushSection({indent + "..." + maybe_separator, m_opts.help_elision_text});
+        return;
+    }
+    if (m_opts.help_elision == HelpElision::SKIP) {
         return;
     }
 
@@ -1073,7 +1074,7 @@ void RPCResult::ToSections(Sections& sections, const OuterType outer_type, const
         }
         CHECK_NONFATAL(!m_inner.empty());
         CHECK_NONFATAL(elision_has_description(m_inner));
-        if (m_type == Type::ARR && m_inner.back().m_type != Type::ELISION) {
+        if (m_type == Type::ARR && m_inner.back().m_type != Type::ELISION && m_inner.back().m_opts.help_elision != HelpElision::START) {
             sections.PushSection({indent_next + "...", ""});
         } else {
             // Remove final comma, which would be invalid JSON

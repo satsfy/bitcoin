@@ -56,15 +56,40 @@ void AddOutputs(CMutableTransaction& rawTx, const UniValue& outputs_in);
 /** Create a transaction from univalue parameters */
 CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf, uint32_t version);
 
+/** Options controlling which optional fields TxDoc() includes. All fields
+ * default to false so callers only need to name the ones they enable:
+ *
+ *   TxDoc({.prevout = true, .hex = true})
+ */
 struct TxDocOptions {
-    /// The description of the txid field
-    std::string txid_field_doc{"The transaction id"};
-    /// Include wallet-related fields (e.g. ischange on outputs)
+    // -- Schema shape: which optional sections to include --
+    bool prevout{false};
+    bool fee{false};
+    bool hex{false};
     bool wallet{false};
-    /// Treat this as an elided Result in the help
-    std::optional<std::string> elision_description{};
+    bool prevout_optional{true};
+
+    // -- Text overrides: all have sensible defaults --
+    std::string txid_field_doc{"The transaction id"};
+    std::string vin_item_doc{"utxo being spent"};
+    std::string prevout_doc{"The previous output, omitted if block undo data is not available"};
+    std::string fee_doc{};  // initialized in .cpp where CURRENCY_UNIT is available
+
+    // -- Help elision policy --
+    /// Elide the entire tx object (top-level fields hidden after summary)
+    std::optional<std::string> top_level_elision{};
+    /// Elide vin inner fields but keep vin array with prevout expanded
+    std::optional<std::string> vin_inner_elision{};
 };
-/** Explain the UniValue "decoded" transaction object, may include extra fields if processed by wallet **/
+
+/**
+ * Build a vector of RPCResult entries describing a decoded transaction object.
+ * Optional sections are controlled by @p opts.
+ *
+ * @param[in] opts            Selects which optional fields to include
+ *
+ * @return A vector of RPCResult describing the decoded transaction object
+ */
 std::vector<RPCResult> TxDoc(const TxDocOptions& opts = {});
 
 #endif // BITCOIN_RPC_RAWTRANSACTION_UTIL_H
