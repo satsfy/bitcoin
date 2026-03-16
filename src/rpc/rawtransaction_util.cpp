@@ -346,35 +346,37 @@ void SignTransactionResultToJSON(CMutableTransaction& mtx, bool complete, const 
 
 std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
 {
-    std::optional<std::string> maybe_skip{};
-    if (opts.elision_description) maybe_skip.emplace();
-    return {
-        {RPCResult::Type::STR_HEX, "txid", opts.txid_field_doc, {}, {.print_elision=opts.elision_description}},
-        {RPCResult::Type::STR_HEX, "hash", "The transaction hash (differs from txid for witness transactions)", {}, {.print_elision=maybe_skip}},
-        {RPCResult::Type::NUM, "size", "The serialized transaction size", {}, {.print_elision=maybe_skip}},
-        {RPCResult::Type::NUM, "vsize", "The virtual transaction size (differs from size for witness transactions)", {}, {.print_elision=maybe_skip}},
-        {RPCResult::Type::NUM, "weight", "The transaction's weight (between vsize*4-3 and vsize*4)", {}, {.print_elision=maybe_skip}},
-        {RPCResult::Type::NUM, "version", "The version", {}, {.print_elision=maybe_skip}},
-        {RPCResult::Type::NUM_TIME, "locktime", "The lock time", {}, {.print_elision=maybe_skip}},
+    const std::string fee_doc{opts.fee_doc.value_or(
+        "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available")};
+
+    auto vin_inner = std::vector<RPCResult>{
+        {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
+        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
+        {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
+        {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
+        {
+            {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
+            {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
+        }},
+        {RPCResult::Type::ARR, "txinwitness", /*optional=*/true, "",
+        {
+            {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
+        }},
+        {RPCResult::Type::NUM, "sequence", "The script sequence number"},
+    };
+
+    auto fields = std::vector<RPCResult>{
+        {RPCResult::Type::STR_HEX, "txid", opts.txid_field_doc},
+        {RPCResult::Type::STR_HEX, "hash", "The transaction hash (differs from txid for witness transactions)"},
+        {RPCResult::Type::NUM, "size", "The serialized transaction size"},
+        {RPCResult::Type::NUM, "vsize", "The virtual transaction size (differs from size for witness transactions)"},
+        {RPCResult::Type::NUM, "weight", "The transaction's weight (between vsize*4-3 and vsize*4)"},
+        {RPCResult::Type::NUM, "version", "The version"},
+        {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
         {RPCResult::Type::ARR, "vin", "",
         {
-            {RPCResult::Type::OBJ, "", "",
-            {
-                {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
-                {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
-                {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
-                {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
-                {
-                    {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
-                    {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
-                }},
-                {RPCResult::Type::ARR, "txinwitness", /*optional=*/true, "",
-                {
-                    {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
-                }},
-                {RPCResult::Type::NUM, "sequence", "The script sequence number"},
-            }},
-        }, {.print_elision=maybe_skip}},
+            {RPCResult::Type::OBJ, "", opts.vin_inner_elision ? opts.vin_item_doc : "", std::move(vin_inner)},
+        }},
         {RPCResult::Type::ARR, "vout", "",
         {
             {RPCResult::Type::OBJ, "", "", Cat(
@@ -383,11 +385,33 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
                     {RPCResult::Type::NUM, "n", "index"},
                     {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
                 },
-                    opts.wallet ?
+                opts.wallet ?
                     std::vector<RPCResult>{{RPCResult::Type::BOOL, "ischange", /*optional=*/true, "Output script is change (only present if true)"}} :
                     std::vector<RPCResult>{}
-                )
-            },
-        }, {.print_elision=maybe_skip}},
+            )},
+        }},
     };
+
+    if (opts.fee) fields.emplace_back(RPCResult::Type::NUM, "fee", /*optional=*/true, fee_doc);
+    if (opts.hex) fields.emplace_back(RPCResult::Type::STR_HEX, "hex", "The hex-encoded transaction data");
+
+    if (opts.top_level_elision) {
+        // When text is non-empty, the first field shows "..., <text>" and fee is kept visible.
+        // When empty, all fields are silently hidden.
+        const bool silent = opts.top_level_elision->empty();
+        bool first = true;
+        for (auto& f : fields) {
+            if (!silent && f.m_key_name == "fee") continue;
+            if (f.m_key_name == "vin" && opts.vin_inner_elision) continue;
+            if (!silent && first) {
+                f.m_opts.help_elision = HelpElision::START;
+                f.m_opts.help_elision_text = *opts.top_level_elision;
+                first = false;
+            } else {
+                f.m_opts.help_elision = HelpElision::SKIP;
+            }
+        }
+    }
+
+    return fields;
 }
