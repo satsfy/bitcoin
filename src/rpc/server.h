@@ -90,6 +90,7 @@ private:
 public:
     CRPCTable();
     std::string help(std::string_view name, const JSONRPCRequest& helpreq) const;
+    UniValue getopenrpcinfo() const;
 
     /**
      * Execute a method.

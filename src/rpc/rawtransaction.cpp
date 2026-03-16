@@ -252,16 +252,17 @@ static RPCHelpMan getrawtransaction()
                     },
                     RPCResult{"for verbosity = 2", RPCResult::Type::OBJ, "", "",
                     Cat<std::vector<RPCResult>>(
-                        {
-                            {RPCResult::Type::BOOL, "in_active_chain", /*optional=*/true, "Whether specified block is in the active chain or not (only present with explicit \"blockhash\" argument)", {}, {.print_elision=std::string{"Same output as verbosity = 1"}}},
-                            {RPCResult::Type::STR_HEX, "blockhash", /*optional=*/true, "the block hash", {}, {.print_elision=std::string{}}},
-                            {RPCResult::Type::NUM, "confirmations", /*optional=*/true, "The confirmations", {}, {.print_elision=std::string{}}},
-                            {RPCResult::Type::NUM_TIME, "blocktime", /*optional=*/true, "The block time expressed in " + UNIX_EPOCH_TIME, {}, {.print_elision=std::string{}}},
-                            {RPCResult::Type::NUM, "time", /*optional=*/true, "Same as \"blocktime\"", {}, {.print_elision=std::string{}}},
-                            {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for 'txid'", {}, {.print_elision=std::string{}}},
-                            {RPCResult::Type::NUM, "fee", /*optional=*/true, "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"},
-                        },
-                        TxDoc({.prevout = true, .vin_elision="Same output as verbosity = 1"}))},
+                        Cat<std::vector<RPCResult>>(
+                            ElideGroup({
+                                {RPCResult::Type::BOOL, "in_active_chain", /*optional=*/true, "Whether specified block is in the active chain or not (only present with explicit \"blockhash\" argument)"},
+                                {RPCResult::Type::STR_HEX, "blockhash", /*optional=*/true, "the block hash"},
+                                {RPCResult::Type::NUM, "confirmations", /*optional=*/true, "The confirmations"},
+                                {RPCResult::Type::NUM_TIME, "blocktime", /*optional=*/true, "The block time expressed in " + UNIX_EPOCH_TIME},
+                                {RPCResult::Type::NUM, "time", /*optional=*/true, "Same as \"blocktime\""},
+                                {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for 'txid'"},
+                            }, "Same output as verbosity = 1"),
+                            {{RPCResult::Type::NUM, "fee", /*optional=*/true, "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"}}),
+                        TxDoc({.prevout = true, .vin_inner_elision="Same output as verbosity = 1"}))},
                 },
                 RPCExamples{
                     HelpExampleCli("getrawtransaction", "\"mytxid\"")
@@ -773,7 +774,7 @@ const RPCResult decodepsbt_inputs{
         {RPCResult::Type::OBJ, "", "",
         {
             {RPCResult::Type::OBJ, "non_witness_utxo", /*optional=*/true, "Decoded network transaction for non-witness UTXOs",
-                TxDoc({.elision_description="The layout is the same as the output of decoderawtransaction."})
+                TxDoc({.top_level_elision="The layout is the same as the output of decoderawtransaction."})
             },
             {RPCResult::Type::OBJ, "witness_utxo", /*optional=*/true, "Transaction output for witness UTXOs",
             {
@@ -1014,7 +1015,7 @@ static RPCHelpMan decodepsbt()
                     RPCResult::Type::OBJ, "", "",
                     {
                         {RPCResult::Type::OBJ, "tx", "The decoded network-serialized unsigned transaction.",
-                            TxDoc({.elision_description="The layout is the same as the output of decoderawtransaction."})
+                            TxDoc({.top_level_elision="The layout is the same as the output of decoderawtransaction."})
                         },
                         {RPCResult::Type::ARR, "global_xpubs", "",
                         {

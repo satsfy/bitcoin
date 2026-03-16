@@ -62,29 +62,24 @@ CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniVal
  *   TxDoc({.prevout = true, .hex = true})
  */
 struct TxDocOptions {
-    /// The description of the txid field
-    std::string txid_field_doc{"The transaction id"};
-    /// Include wallet-related fields (e.g. ischange on outputs)
-    bool wallet{false};
-    /// Include previous-output information on inputs
+    // -- Schema shape: which optional sections to include --
     bool prevout{false};
-    /// Include fee field
     bool fee{false};
-    /// Include hex-encoded transaction data
     bool hex{false};
-    /// Treat this as an elided Result in the help
-    std::optional<std::string> elision_description{};
-    /// When set, elide vin inner fields but show the vin array with prevout
-    /// expanded. The string is the elision description for vin items.
-    std::optional<std::string> vin_elision{};
-    /// Optional custom description for each vin object when vin_elision is set.
-    std::optional<std::string> vin_item_doc{};
-    /// Optional custom description for the prevout field.
-    std::optional<std::string> prevout_doc{};
-    /// Controls whether prevout is marked optional in docs.
+    bool wallet{false};
     bool prevout_optional{true};
-    /// Optional custom description for the fee field.
-    std::optional<std::string> fee_doc{};
+
+    // -- Text overrides: all have sensible defaults --
+    std::string txid_field_doc{"The transaction id"};
+    std::string vin_item_doc{"utxo being spent"};
+    std::string prevout_doc{"The previous output, omitted if block undo data is not available"};
+    std::string fee_doc{};  // initialized in .cpp where CURRENCY_UNIT is available
+
+    // -- Help elision policy --
+    /// Elide the entire tx object (top-level fields hidden after summary)
+    std::optional<std::string> top_level_elision{};
+    /// Elide vin inner fields but keep vin array with prevout expanded
+    std::optional<std::string> vin_inner_elision{};
 };
 
 /**

@@ -290,20 +290,31 @@ struct RPCArg {
      * the argument is required.
      */
     std::string ToDescriptionString(bool is_named_arg) const;
+
+    UniValue ToDescriptionValue() const;
+};
+
+/** Controls how an RPCResult is rendered in human-readable help text. */
+enum class HelpElision {
+    NONE,   //!< field printed normally
+    START,  //!< first elided field: print "..." with summary text
+    SKIP,   //!< subsequent elided field: hidden in help, present in schema
 };
 
 struct RPCResultOptions {
     bool skip_type_check{false};
-    /// Whether to treat this as elided in the human-readable description, and
-    /// possibly supply a description for the elision. Normally, there will be
-    /// one string on any of the elided results, for example `Same output as
-    /// verbosity = 1`, and all other elided strings will be empty.
-    ///
-    /// - If nullopt: normal display.
-    /// - If empty string: suppress from help.
-    /// - If non-empty: show "..." with this description.
-    std::optional<std::string> print_elision{std::nullopt};
+    HelpElision help_elision{HelpElision::NONE};
+    std::string help_elision_text{};  //!< only meaningful when help_elision == START
 };
+
+/** Convenience: create options for the first field in an elision group. */
+inline RPCResultOptions Elide(std::string text) {
+    return {.help_elision = HelpElision::START, .help_elision_text = std::move(text)};
+}
+/** Convenience: create options for subsequent fields in an elision group. */
+inline RPCResultOptions ElideSkip() {
+    return {.help_elision = HelpElision::SKIP};
+}
 // NOLINTNEXTLINE(misc-no-recursion)
 struct RPCResult {
     enum class Type {
@@ -326,7 +337,7 @@ struct RPCResult {
     const std::string m_key_name;         //!< Only used for dicts
     const std::vector<RPCResult> m_inner; //!< Only used for arrays or dicts
     const bool m_optional;
-    const RPCResultOptions m_opts;
+    RPCResultOptions m_opts;
     const std::string m_description;
     const std::string m_cond;
 
@@ -396,9 +407,22 @@ struct RPCResult {
      */
     UniValue MatchesType(const UniValue& result) const;
 
+    UniValue ToDescriptionValue() const;
+
 private:
     void CheckInnerDoc() const;
 };
+
+/** Stamp elision onto an entire vector of RPCResult fields at once. */
+inline std::vector<RPCResult> ElideGroup(std::vector<RPCResult> fields, std::string summary = "")
+{
+    if (fields.empty()) return fields;
+    fields[0].m_opts = Elide(std::move(summary));
+    for (size_t i = 1; i < fields.size(); ++i) {
+        fields[i].m_opts = ElideSkip();
+    }
+    return fields;
+}
 
 struct RPCResults {
     const std::vector<RPCResult> m_results;
@@ -417,6 +441,8 @@ struct RPCResults {
      * Return the description string.
      */
     std::string ToDescriptionString() const;
+
+    UniValue ToDescriptionValue() const;
 };
 
 struct RPCExamples {
@@ -427,6 +453,7 @@ struct RPCExamples {
     {
     }
     std::string ToDescriptionString() const;
+    UniValue ToDescriptionValue() const;
 };
 
 class RPCHelpMan
@@ -508,6 +535,9 @@ public:
     std::vector<std::pair<std::string, bool>> GetArgNames() const;
 
     const std::string m_name;
+
+    UniValue ToDescriptionValue(const std::string& category) const;
+    UniValue ToOpenRPCValue(const std::string& category) const;
 
 private:
     const RPCMethodImpl m_fun;
