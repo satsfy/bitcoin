@@ -574,7 +574,7 @@ RPCHelpMan listsinceblock()
                         {RPCResult::Type::ARR, "removed", /*optional=*/true, "<structure is the same as \"transactions\" above, only present if include_removed=true>\n"
                             "Note: transactions that were re-added in the active chain will appear as-is in this array, and may thus have a positive confirmation count.",
                         {
-                            {RPCResult::Type::OBJ, "", "", ListSinceBlockTxFields()},
+                            {RPCResult::Type::OBJ, "", "", ListSinceBlockTxFields(), {.print_elision=std::optional<std::string>{std::string{}}}},
                         }},
                         {RPCResult::Type::STR_HEX, "lastblock", "The hash of the block (target_confirmations-1) from the best block on the main chain, or the genesis hash if the referenced block does not exist yet. This is typically used to feed back into listsinceblock the next time you call it. So you would generally use a target_confirmations of say 6, so you will be continually re-notified of transactions until they've reached 6 confirmations plus any new ones"},
                     }

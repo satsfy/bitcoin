@@ -74,6 +74,17 @@ struct TxDocOptions {
     bool hex{false};
     /// Treat this as an elided Result in the help
     std::optional<std::string> elision_description{};
+    /// When set, elide vin inner fields but show the vin array with prevout
+    /// expanded. The string is the elision description for vin items.
+    std::optional<std::string> vin_elision{};
+    /// Optional custom description for each vin object when vin_elision is set.
+    std::optional<std::string> vin_item_doc{};
+    /// Optional custom description for the prevout field.
+    std::optional<std::string> prevout_doc{};
+    /// Controls whether prevout is marked optional in docs.
+    bool prevout_optional{true};
+    /// Optional custom description for the fee field.
+    std::optional<std::string> fee_doc{};
 };
 
 /**

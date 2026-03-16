@@ -735,14 +735,17 @@ static CBlockUndo GetUndoChecked(BlockManager& blockman, const CBlockIndex& bloc
     return blockUndo;
 }
 
-static std::vector<RPCResult> GetBlockFields(RPCResult tx_result)
+static std::vector<RPCResult> GetBlockFields(RPCResult tx_result, std::optional<std::string> elision_msg = std::nullopt)
 {
+    std::optional<std::string> dots = elision_msg;
+    std::optional<std::string> skip = elision_msg ? std::optional<std::string>("") : std::nullopt;
+
     auto fields = std::vector<RPCResult>{
-        {RPCResult::Type::STR_HEX, "hash", "the block hash (same as provided)"},
-        {RPCResult::Type::NUM, "confirmations", "The number of confirmations, or -1 if the block is not on the main chain"},
-        {RPCResult::Type::NUM, "size", "The block size"},
-        {RPCResult::Type::NUM, "strippedsize", "The block size excluding witness data"},
-        {RPCResult::Type::NUM, "weight", "The block weight as defined in BIP 141"},
+        {RPCResult::Type::STR_HEX, "hash", "the block hash (same as provided)", {}, {.print_elision=dots}},
+        {RPCResult::Type::NUM, "confirmations", "The number of confirmations, or -1 if the block is not on the main chain", {}, {.print_elision=skip}},
+        {RPCResult::Type::NUM, "size", "The block size", {}, {.print_elision=skip}},
+        {RPCResult::Type::NUM, "strippedsize", "The block size excluding witness data", {}, {.print_elision=skip}},
+        {RPCResult::Type::NUM, "weight", "The block weight as defined in BIP 141", {}, {.print_elision=skip}},
         {RPCResult::Type::OBJ, "coinbase_tx", "Coinbase transaction metadata",
         {
             {RPCResult::Type::NUM, "version", "The coinbase transaction version"},
@@ -750,23 +753,23 @@ static std::vector<RPCResult> GetBlockFields(RPCResult tx_result)
             {RPCResult::Type::NUM, "sequence", "The coinbase input's sequence number (nSequence)"},
             {RPCResult::Type::STR_HEX, "coinbase", "The coinbase input's script"},
             {RPCResult::Type::STR_HEX, "witness", /*optional=*/true, "The coinbase input's first (and only) witness stack element, if present"},
-        }},
-        {RPCResult::Type::NUM, "height", "The block height or index"},
-        {RPCResult::Type::NUM, "version", "The block version"},
-        {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
-        {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
+        }, {.print_elision=skip}},
+        {RPCResult::Type::NUM, "height", "The block height or index", {}, {.print_elision=skip}},
+        {RPCResult::Type::NUM, "version", "The block version", {}, {.print_elision=skip}},
+        {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal", {}, {.print_elision=skip}},
+        {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root", {}, {.print_elision=skip}},
     };
     fields.push_back(std::move(tx_result));
-    fields.emplace_back(RPCResult::Type::NUM_TIME, "time",       "The block time expressed in " + UNIX_EPOCH_TIME);
-    fields.emplace_back(RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME);
-    fields.emplace_back(RPCResult::Type::NUM, "nonce", "The nonce");
-    fields.emplace_back(RPCResult::Type::STR_HEX, "bits", "nBits: compact representation of the block difficulty target");
-    fields.emplace_back(RPCResult::Type::STR_HEX, "target", "The difficulty target");
-    fields.emplace_back(RPCResult::Type::NUM, "difficulty", "The difficulty");
-    fields.emplace_back(RPCResult::Type::STR_HEX, "chainwork", "Expected number of hashes required to produce the chain up to this block (in hex)");
-    fields.emplace_back(RPCResult::Type::NUM, "nTx", "The number of transactions in the block");
-    fields.emplace_back(RPCResult::Type::STR_HEX, "previousblockhash", /*optional=*/true, "The hash of the previous block (if available)");
-    fields.emplace_back(RPCResult::Type::STR_HEX, "nextblockhash", /*optional=*/true, "The hash of the next block (if available)");
+    fields.emplace_back(RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME, std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
+    fields.emplace_back(RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME, std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
+    fields.emplace_back(RPCResult::Type::NUM, "nonce", "The nonce", std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
+    fields.emplace_back(RPCResult::Type::STR_HEX, "bits", "nBits: compact representation of the block difficulty target", std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
+    fields.emplace_back(RPCResult::Type::STR_HEX, "target", "The difficulty target", std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
+    fields.emplace_back(RPCResult::Type::NUM, "difficulty", "The difficulty", std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
+    fields.emplace_back(RPCResult::Type::STR_HEX, "chainwork", "Expected number of hashes required to produce the chain up to this block (in hex)", std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
+    fields.emplace_back(RPCResult::Type::NUM, "nTx", "The number of transactions in the block", std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
+    fields.emplace_back(RPCResult::Type::STR_HEX, "previousblockhash", /*optional=*/true, "The hash of the previous block (if available)", std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
+    fields.emplace_back(RPCResult::Type::STR_HEX, "nextblockhash", /*optional=*/true, "The hash of the next block (if available)", std::vector<RPCResult>{}, RPCResultOptions{.print_elision=skip});
     return fields;
 }
 
@@ -792,14 +795,18 @@ static RPCHelpMan getblock()
                         GetBlockFields({RPCResult::Type::ARR, "tx", "",
                         {
                             {RPCResult::Type::OBJ, "", "",
-                                TxDoc({.fee = true, .hex = true})},
-                        }})},
+                                TxDoc({.fee = true, .elision_description="The transactions in the format of the getrawtransaction RPC. Different from verbosity = 1 \"tx\" result",
+                                       .fee_doc = "The transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"})},
+                        }}, /*elision_msg=*/"Same output as verbosity = 1")},
                     RPCResult{"for verbosity = 3", RPCResult::Type::OBJ, "", "",
                         GetBlockFields({RPCResult::Type::ARR, "tx", "",
                         {
                             {RPCResult::Type::OBJ, "", "",
-                                TxDoc({.prevout = true, .fee = true, .hex = true})},
-                        }})},
+                                TxDoc({.prevout = true, .vin_elision="The same output as verbosity = 2",
+                                       .vin_item_doc = "",
+                                       .prevout_doc = "(Only if undo information is available)",
+                                       .prevout_optional = false})},
+                        }}, /*elision_msg=*/"Same output as verbosity = 2")},
                 },
                 RPCExamples{
                     HelpExampleCli("getblock", "\"00000000c937983704a73af28acdec37b049d214adbda81d7e2a3dd146f6ed09\"")
