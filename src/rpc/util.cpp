@@ -1015,10 +1015,9 @@ void RPCResult::ToSections(Sections& sections, const OuterType outer_type, const
                (this->m_description.empty() ? "" : " " + this->m_description);
     };
 
-    // Ensure at least one elision description exists, if there is any elision
+    // Ensure at least one visible field exists when elision is used
     const auto elision_has_description{[](const std::vector<RPCResult>& inner) {
-        return std::ranges::none_of(inner, [](const auto& res) { return res.m_opts.help_elision != HelpElision::NONE; }) ||
-               std::ranges::any_of(inner, [](const auto& res) { return res.m_opts.help_elision == HelpElision::START; });
+        return std::ranges::any_of(inner, [](const auto& res) { return res.m_opts.help_elision != HelpElision::SKIP; });
     }};
 
     if (m_opts.help_elision == HelpElision::START) {
@@ -1031,7 +1030,7 @@ void RPCResult::ToSections(Sections& sections, const OuterType outer_type, const
 
     switch (m_type) {
     case Type::ELISION: {
-        // Deprecated alias of m_opts.print_elision
+        // Deprecated alias of m_opts.help_elision
         sections.PushSection({indent + "..." + maybe_separator, m_description});
         return;
     }
@@ -1194,6 +1193,7 @@ UniValue RPCResult::MatchesType(const UniValue& result) const
         }
 
         for (const auto& doc_entry : m_inner) {
+            if (doc_entry.m_opts.skip_type_check) continue;
             const auto result_it{result_obj.find(doc_entry.m_key_name)};
             if (result_it == result_obj.end()) {
                 if (!doc_entry.m_optional) {

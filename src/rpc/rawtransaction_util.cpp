@@ -346,9 +346,8 @@ void SignTransactionResultToJSON(CMutableTransaction& mtx, bool complete, const 
 
 std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
 {
-    const std::string fee_doc{opts.fee_doc.empty()
-        ? "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"
-        : opts.fee_doc};
+    const std::string fee_doc{opts.fee_doc.value_or(
+        "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available")};
 
     // Build vin inner fields
     auto vin_inner = std::vector<RPCResult>{
@@ -366,13 +365,15 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         }},
     };
     if (opts.prevout) {
-        vin_inner.push_back({RPCResult::Type::OBJ, "prevout", /*optional=*/opts.prevout_optional, opts.prevout_doc,
+        RPCResultOptions prevout_opts{};
+        if (opts.prevout_required) prevout_opts.skip_type_check = true;
+        vin_inner.push_back({RPCResult::Type::OBJ, "prevout", /*optional=*/!opts.prevout_required, opts.prevout_doc,
         {
             {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
             {RPCResult::Type::NUM, "height", "The height of the prevout"},
             {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
             {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
-        }});
+        }, prevout_opts});
     }
     vin_inner.push_back({RPCResult::Type::NUM, "sequence", "The script sequence number"});
 
@@ -381,7 +382,8 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         if (opts.prevout) {
             for (auto& r : vin_inner) {
                 if (r.m_key_name == "prevout") {
-                    r.m_opts = {};
+                    r.m_opts.help_elision = HelpElision::NONE;
+                    r.m_opts.help_elision_text.clear();
                     break;
                 }
             }
@@ -419,21 +421,22 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
     if (opts.hex) fields.push_back({RPCResult::Type::STR_HEX, "hex", "The hex-encoded transaction data"});
 
     if (opts.top_level_elision) {
-        // Elide all fields except conditionally-added trailing fields (fee, hex)
-        for (size_t i = 0; i < fields.size(); ++i) {
-            if (fields[i].m_key_name == "fee" || fields[i].m_key_name == "hex") continue;
-            fields[i].m_opts = (i == 0) ? Elide(*opts.top_level_elision) : ElideSkip();
-        }
-    } else if (opts.vin_inner_elision) {
-        // Only return the vin array; caller handles outer elision/context
-        std::vector<RPCResult> vin_only;
+        // Elide top-level fields. When the elision text is non-empty, the first
+        // elided field shows "..., <text>"; fee is kept visible. When empty,
+        // all fields are silently hidden (SKIP only, no START entry).
+        const bool silent = opts.top_level_elision->empty();
+        bool first = true;
         for (auto& f : fields) {
-            if (f.m_key_name == "vin") {
-                vin_only.push_back(std::move(f));
-                break;
+            if (!silent && f.m_key_name == "fee") continue;
+            if (f.m_key_name == "vin" && opts.vin_inner_elision) continue;
+            if (!silent && first) {
+                f.m_opts.help_elision = HelpElision::START;
+                f.m_opts.help_elision_text = *opts.top_level_elision;
+                first = false;
+            } else {
+                f.m_opts.help_elision = HelpElision::SKIP;
             }
         }
-        fields = std::move(vin_only);
     }
 
     return fields;

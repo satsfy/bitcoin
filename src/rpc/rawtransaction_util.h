@@ -56,40 +56,29 @@ void AddOutputs(CMutableTransaction& rawTx, const UniValue& outputs_in);
 /** Create a transaction from univalue parameters */
 CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf, uint32_t version);
 
-/** Options controlling which optional fields TxDoc() includes. All fields
- * default to false so callers only need to name the ones they enable:
- *
- *   TxDoc({.prevout = true, .hex = true})
- */
+/// Options controlling optional fields in TxDoc().
+/// Callers only need to name the options they enable.
 struct TxDocOptions {
-    // -- Schema shape: which optional sections to include --
     bool prevout{false};
     bool fee{false};
     bool hex{false};
     bool wallet{false};
-    bool prevout_optional{true};
+    bool prevout_required{false};
 
-    // -- Text overrides: all have sensible defaults --
     std::string txid_field_doc{"The transaction id"};
     std::string vin_item_doc{"utxo being spent"};
     std::string prevout_doc{"The previous output, omitted if block undo data is not available"};
-    std::string fee_doc{};  // initialized in .cpp where CURRENCY_UNIT is available
+    std::optional<std::string> fee_doc{};
 
-    // -- Help elision policy --
-    /// Elide the entire tx object (top-level fields hidden after summary)
+    /// Elide the entire tx object (top-level fields hidden after summary).
+    /// When vin_inner_elision is also set, the vin array is kept visible.
     std::optional<std::string> top_level_elision{};
-    /// Elide vin inner fields but keep vin array with prevout expanded
+    /// Elide vin inner fields but keep vin array with prevout expanded.
     std::optional<std::string> vin_inner_elision{};
 };
 
-/**
- * Build a vector of RPCResult entries describing a decoded transaction object.
- * Optional sections are controlled by @p opts.
- *
- * @param[in] opts            Selects which optional fields to include
- *
- * @return A vector of RPCResult describing the decoded transaction object
- */
+/// Describe the decoded transaction object.
+/// Some fields are adjusted according to @p opts.
 std::vector<RPCResult> TxDoc(const TxDocOptions& opts = {});
 
 #endif // BITCOIN_RPC_RAWTRANSACTION_UTIL_H

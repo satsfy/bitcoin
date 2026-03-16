@@ -261,8 +261,10 @@ static RPCHelpMan getrawtransaction()
                                 {RPCResult::Type::NUM, "time", /*optional=*/true, "Same as \"blocktime\""},
                                 {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for 'txid'"},
                             }, "Same output as verbosity = 1"),
-                            {{RPCResult::Type::NUM, "fee", /*optional=*/true, "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"}}),
-                        TxDoc({.prevout = true, .vin_inner_elision="Same output as verbosity = 1"}))},
+                            std::vector<RPCResult>{{RPCResult::Type::NUM, "fee", /*optional=*/true, "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"}}),
+                        TxDoc({.prevout = true,
+                               .top_level_elision = "",
+                               .vin_inner_elision = "Same output as verbosity = 1"}))},
                 },
                 RPCExamples{
                     HelpExampleCli("getrawtransaction", "\"mytxid\"")

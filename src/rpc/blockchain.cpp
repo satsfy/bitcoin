@@ -756,7 +756,6 @@ static std::vector<RPCResult> GetBlockFields(RPCResult tx_result, std::optional<
         {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
         {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
     };
-    const size_t tx_index = fields.size();
     fields.push_back(std::move(tx_result));
     fields.emplace_back(RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME);
     fields.emplace_back(RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME);
@@ -770,9 +769,16 @@ static std::vector<RPCResult> GetBlockFields(RPCResult tx_result, std::optional<
     fields.emplace_back(RPCResult::Type::STR_HEX, "nextblockhash", /*optional=*/true, "The hash of the next block (if available)");
     if (elision_msg) {
         // Elide all block-level fields except the tx array (which differs per verbosity)
-        fields[0].m_opts = Elide(*elision_msg);
-        for (size_t i = 1; i < fields.size(); ++i) {
-            if (i != tx_index) fields[i].m_opts = ElideSkip();
+        bool first = true;
+        for (auto& f : fields) {
+            if (f.m_key_name == "tx") continue;
+            if (first) {
+                f.m_opts.help_elision = HelpElision::START;
+                f.m_opts.help_elision_text = *elision_msg;
+                first = false;
+            } else {
+                f.m_opts.help_elision = HelpElision::SKIP;
+            }
         }
     }
     return fields;
@@ -800,7 +806,7 @@ static RPCHelpMan getblock()
                         GetBlockFields({RPCResult::Type::ARR, "tx", "",
                         {
                             {RPCResult::Type::OBJ, "", "",
-                                TxDoc({.fee = true,
+                                TxDoc({.fee = true, .hex = true,
                                        .fee_doc = "The transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available",
                                        .top_level_elision="The transactions in the format of the getrawtransaction RPC. Different from verbosity = 1 \"tx\" result"})},
                         }}, /*elision_msg=*/"Same output as verbosity = 1")},
@@ -808,9 +814,11 @@ static RPCHelpMan getblock()
                         GetBlockFields({RPCResult::Type::ARR, "tx", "",
                         {
                             {RPCResult::Type::OBJ, "", "",
-                                TxDoc({.prevout = true, .prevout_optional = false,
+                                TxDoc({.prevout = true, .fee = true, .hex = true,
+                                       .prevout_required = true,
                                        .vin_item_doc = "",
                                        .prevout_doc = "(Only if undo information is available)",
+                                       .top_level_elision = "",
                                        .vin_inner_elision = "The same output as verbosity = 2"})},
                         }}, /*elision_msg=*/"Same output as verbosity = 2")},
                 },

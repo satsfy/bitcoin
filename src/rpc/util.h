@@ -335,7 +335,7 @@ struct RPCResult {
     const std::string m_key_name;         //!< Only used for dicts
     const std::vector<RPCResult> m_inner; //!< Only used for arrays or dicts
     const bool m_optional;
-    const RPCResultOptions m_opts;
+    RPCResultOptions m_opts;
     const std::string m_description;
     const std::string m_cond;
 
@@ -409,13 +409,15 @@ private:
     void CheckInnerDoc() const;
 };
 
-/** Stamp elision onto an entire vector of RPCResult fields at once. */
+/** Stamp elision onto an entire vector of RPCResult fields at once.
+ *  Merges into existing m_opts so that flags like skip_type_check are preserved. */
 inline std::vector<RPCResult> ElideGroup(std::vector<RPCResult> fields, std::string summary = "")
 {
     if (fields.empty()) return fields;
-    fields[0].m_opts = Elide(std::move(summary));
+    fields[0].m_opts.help_elision = HelpElision::START;
+    fields[0].m_opts.help_elision_text = std::move(summary);
     for (size_t i = 1; i < fields.size(); ++i) {
-        fields[i].m_opts = ElideSkip();
+        fields[i].m_opts.help_elision = HelpElision::SKIP;
     }
     return fields;
 }
