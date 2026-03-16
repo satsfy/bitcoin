@@ -60,6 +60,10 @@ CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniVal
 ///
 /// TxDoc({.fee = true, .hex = true})
 struct TxDocOptions {
+    /// Include prevout in vin
+    bool prevout{false};
+    /// Indicate whether prevout field is optional or not in documentation
+    bool prevout_required{false};
     /// Include fee field
     bool fee{false};
     /// Include hex field
@@ -69,11 +73,15 @@ struct TxDocOptions {
 
     /// Customize a field's doc string
     std::string txid_field_doc{"The transaction id"};
+    std::string prevout_doc{"The previous output, omitted if block undo data is not available"};
     /// Kept optional for configuration with CURRENCY_UNIT value in cpp file.
     std::optional<std::string> fee_doc{};
 
     /// Elide the entire tx object (top-level fields hidden after summary).
+    /// When vin_inner_elision is also set, the vin array is kept visible.
     std::optional<std::string> top_level_elision{};
+    /// Elide vin inner fields but keep vin array with prevout expanded.
+    std::optional<std::string> vin_inner_elision{};
 };
 
 /// Describe the transaction object.

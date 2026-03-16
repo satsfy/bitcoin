@@ -362,8 +362,32 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         {
             {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
         }},
-        {RPCResult::Type::NUM, "sequence", "The script sequence number"},
     };
+    if (opts.prevout) {
+        vin_inner.emplace_back(
+            RPCResult::Type::OBJ, "prevout", /*optional=*/!opts.prevout_required, opts.prevout_doc,
+            std::vector<RPCResult>{
+                {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
+                {RPCResult::Type::NUM, "height", "The height of the prevout"},
+                {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+                {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
+            }
+        );
+    }
+    vin_inner.emplace_back(RPCResult::Type::NUM, "sequence", "The script sequence number");
+
+    if (opts.vin_inner_elision) {
+        vin_inner = ElideGroup(std::move(vin_inner), *opts.vin_inner_elision);
+        if (opts.prevout) {
+            for (auto& r : vin_inner) {
+                if (r.m_key_name == "prevout") {
+                    r.m_opts.help_elision = HelpElision::NONE;
+                    r.m_opts.help_elision_text.clear();
+                    break;
+                }
+            }
+        }
+    }
 
     auto fields = std::vector<RPCResult>{
         {RPCResult::Type::STR_HEX, "txid", opts.txid_field_doc},
@@ -375,7 +399,7 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
         {RPCResult::Type::ARR, "vin", "",
         {
-            {RPCResult::Type::OBJ, "", opts.vin_inner_elision ? opts.vin_item_doc : "", std::move(vin_inner)},
+            {RPCResult::Type::OBJ, "", "", std::move(vin_inner)},
         }},
         {RPCResult::Type::ARR, "vout", "",
         {
