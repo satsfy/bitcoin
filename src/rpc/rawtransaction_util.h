@@ -74,6 +74,7 @@ struct TxDocOptions {
     /// Customize a field's doc string
     std::string txid_field_doc{"The transaction id"};
     std::string prevout_doc{"The previous output, omitted if block undo data is not available"};
+    std::string vin_item_doc{"utxo being spent"};
     /// Kept optional for configuration with CURRENCY_UNIT value in cpp file.
     std::optional<std::string> fee_doc{};
 

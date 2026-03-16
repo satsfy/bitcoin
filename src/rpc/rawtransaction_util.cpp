@@ -399,7 +399,7 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
         {RPCResult::Type::ARR, "vin", "",
         {
-            {RPCResult::Type::OBJ, "", "", std::move(vin_inner)},
+            {RPCResult::Type::OBJ, "", opts.vin_inner_elision ? opts.vin_item_doc : "", std::move(vin_inner)},
         }},
         {RPCResult::Type::ARR, "vout", "",
         {
