@@ -58,6 +58,8 @@ CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniVal
 
 /// Options controlling some fields in TxDoc(). Callers only need to name the ones they enable:
 struct TxDocOptions {
+    /// Include prevout field
+    bool prevout{false};
     /// Include wallet-related fields (e.g. ischange on outputs)
     bool wallet{false};
 
@@ -65,7 +67,13 @@ struct TxDocOptions {
     std::string txid_field_doc{"The transaction id"};
 
     /// Elide the entire tx object (top-level fields hidden after summary).
+    /// When vin_inner_elision is also set, the vin array is kept visible.
     std::optional<std::string> top_level_elision{};
+    /// When true, silently elide all top-level fields with no summary text.
+    /// Mutually exclusive with top_level_elision.
+    bool top_level_elision_silent{false};
+    /// Elide vin inner fields but keep vin array with prevout expanded.
+    std::optional<std::string> vin_inner_elision{};
 };
 
 /// Describe the transaction object.
