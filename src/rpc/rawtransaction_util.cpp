@@ -362,8 +362,37 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         {
             {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
         }},
-        {RPCResult::Type::NUM, "sequence", "The script sequence number"},
     };
+    if (opts.prevout) {
+        vin_inner.emplace_back(RPCResult::Type::OBJ, "prevout", /*optional=*/!opts.prevout_required, opts.prevout_doc,
+        std::vector<RPCResult>{
+            {RPCResult::Type::BOOL, "generated", "Coinbase or not"},
+            {RPCResult::Type::NUM, "height", "The height of the prevout"},
+            {RPCResult::Type::STR_AMOUNT, "value", "The value in " + CURRENCY_UNIT},
+            {RPCResult::Type::OBJ, "scriptPubKey", "", ScriptPubKeyDoc()},
+        });
+    }
+    vin_inner.emplace_back(RPCResult::Type::NUM, "sequence", "The script sequence number");
+
+    if (opts.vin_inner_elision) {
+        vin_inner = ElideGroup(std::move(vin_inner), *opts.vin_inner_elision);
+        if (opts.prevout) {
+            // prevout remains visible even when other fields are elided
+            std::vector<RPCResult> new_vin;
+            new_vin.reserve(vin_inner.size());
+            for (const auto& r : vin_inner) {
+                if (r.m_key_name == "prevout") {
+                    RPCResultOptions unopts = r.m_opts;
+                    unopts.help_elision = HelpElision::NONE;
+                    unopts.help_elision_text.clear();
+                    new_vin.emplace_back(r, std::move(unopts));
+                } else {
+                    new_vin.push_back(r);
+                }
+            }
+            vin_inner = std::move(new_vin);
+        }
+    }
 
     auto fields = std::vector<RPCResult>{
         {RPCResult::Type::STR_HEX, "txid", opts.txid_field_doc},
