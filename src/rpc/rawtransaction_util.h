@@ -56,15 +56,28 @@ void AddOutputs(CMutableTransaction& rawTx, const UniValue& outputs_in);
 /** Create a transaction from univalue parameters */
 CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniValue& outputs_in, const UniValue& locktime, std::optional<bool> rbf, uint32_t version);
 
+/// Options controlling some fields in TxDoc(). Callers only need to name the ones they enable:
 struct TxDocOptions {
-    /// The description of the txid field
-    std::string txid_field_doc{"The transaction id"};
+    /// Include fee field
+    bool fee{false};
+    /// Include hex field
+    bool hex{false};
     /// Include wallet-related fields (e.g. ischange on outputs)
     bool wallet{false};
-    /// Treat this as an elided Result in the help
-    std::optional<std::string> elision_description{};
+
+    /// Customize a field's doc string
+    std::string txid_field_doc{"The transaction id"};
+    std::optional<std::string> fee_doc{};
+
+    /// Elide the entire tx object (top-level fields hidden after summary).
+    std::optional<std::string> top_level_elision{};
+    /// When true, silently elide all top-level fields with no summary text.
+    /// Mutually exclusive with top_level_elision.
+    bool top_level_elision_silent{false};
 };
-/** Explain the UniValue "decoded" transaction object, may include extra fields if processed by wallet **/
+
+/// Describe the transaction object.
+/// Some fields are adjusted according to @p opts.
 std::vector<RPCResult> TxDoc(const TxDocOptions& opts = {});
 
 #endif // BITCOIN_RPC_RAWTRANSACTION_UTIL_H
