@@ -346,6 +346,25 @@ void SignTransactionResultToJSON(CMutableTransaction& mtx, bool complete, const 
 
 std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
 {
+    const std::string fee_doc{opts.fee_doc.value_or(
+        "transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available")};
+
+    auto vin_inner = std::vector<RPCResult>{
+        {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
+        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
+        {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
+        {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
+        {
+            {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
+            {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
+        }},
+        {RPCResult::Type::ARR, "txinwitness", /*optional=*/true, "",
+        {
+            {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
+        }},
+        {RPCResult::Type::NUM, "sequence", "The script sequence number"},
+    };
+
     auto fields = std::vector<RPCResult>{
         {RPCResult::Type::STR_HEX, "txid", opts.txid_field_doc},
         {RPCResult::Type::STR_HEX, "hash", "The transaction hash (differs from txid for witness transactions)"},
@@ -356,22 +375,7 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         {RPCResult::Type::NUM_TIME, "locktime", "The lock time"},
         {RPCResult::Type::ARR, "vin", "",
         {
-            {RPCResult::Type::OBJ, "", "",
-            {
-                {RPCResult::Type::STR_HEX, "coinbase", /*optional=*/true, "The coinbase value (only if coinbase transaction)"},
-                {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction id (if not coinbase transaction)"},
-                {RPCResult::Type::NUM, "vout", /*optional=*/true, "The output number (if not coinbase transaction)"},
-                {RPCResult::Type::OBJ, "scriptSig", /*optional=*/true, "The script (if not coinbase transaction)",
-                {
-                    {RPCResult::Type::STR, "asm", "Disassembly of the signature script"},
-                    {RPCResult::Type::STR_HEX, "hex", "The raw signature script bytes, hex-encoded"},
-                }},
-                {RPCResult::Type::ARR, "txinwitness", /*optional=*/true, "",
-                {
-                    {RPCResult::Type::STR_HEX, "hex", "hex-encoded witness data (if any)"},
-                }},
-                {RPCResult::Type::NUM, "sequence", "The script sequence number"},
-            }},
+            {RPCResult::Type::OBJ, "", "", std::move(vin_inner)},
         }},
         {RPCResult::Type::ARR, "vout", "",
         {
@@ -388,8 +392,32 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         }},
     };
 
-    if (opts.elision_description) {
-        fields = ElideGroup(std::move(fields), *opts.elision_description);
+    if (opts.fee) fields.emplace_back(RPCResult::Type::NUM, "fee", /*optional=*/true, fee_doc);
+    if (opts.hex) fields.emplace_back(RPCResult::Type::STR_HEX, "hex", "The hex-encoded transaction data");
+
+    if (opts.top_level_elision || opts.top_level_elision_silent) {
+        const bool silent = opts.top_level_elision_silent;
+        std::vector<RPCResult> new_fields;
+        new_fields.reserve(fields.size());
+        bool first = true;
+        for (const auto& f : fields) {
+            if (!silent && f.m_key_name == "fee") {
+                new_fields.push_back(f);
+                continue;
+            }
+            if (!silent && first) {
+                RPCResultOptions eopts = f.m_opts;
+                eopts.help_elision = HelpElision::START;
+                eopts.help_elision_text = *opts.top_level_elision;
+                new_fields.emplace_back(f, std::move(eopts));
+                first = false;
+            } else {
+                RPCResultOptions eopts = f.m_opts;
+                eopts.help_elision = HelpElision::SKIP;
+                new_fields.emplace_back(f, std::move(eopts));
+            }
+        }
+        fields = std::move(new_fields);
     }
 
     return fields;
