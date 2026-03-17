@@ -600,6 +600,24 @@ static void CheckRpc(const std::vector<RPCArg>& params, const UniValue& args, RP
     rpc.HandleRequest(req);
 }
 
+BOOST_AUTO_TEST_CASE(rpc_result_skip_type_check_still_checks_presence)
+{
+    const RPCResult result_doc{
+        RPCResult::Type::OBJ,
+        "",
+        "",
+        std::vector<RPCResult>{
+            {RPCResult::Type::BOOL, "scanning", "Either false or a scanning progress object", {}, RPCResultOptions{.skip_type_check = true}}
+        }
+    };
+
+    const UniValue missing_result{result_doc.MatchesType(JSON(R"({})"))};
+    BOOST_CHECK_EQUAL(missing_result.write(), R"({"scanning":"key missing, despite not being optional in doc"})");
+
+    BOOST_CHECK(result_doc.MatchesType(JSON(R"({"scanning":false})")).isTrue());
+    BOOST_CHECK(result_doc.MatchesType(JSON(R"({"scanning":{"duration":1,"progress":0.5}})")).isTrue());
+}
+
 BOOST_AUTO_TEST_CASE(rpc_arg_helper)
 {
     constexpr bool DEFAULT_BOOL = true;

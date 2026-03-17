@@ -1200,6 +1200,7 @@ UniValue RPCResult::MatchesType(const UniValue& result) const
                 }
                 continue;
             }
+            if (doc_entry.m_opts.skip_type_check) continue;
             UniValue match{doc_entry.MatchesType(result_it->second)};
             if (!match.isTrue()) errors.pushKV(doc_entry.m_key_name, std::move(match));
         }
