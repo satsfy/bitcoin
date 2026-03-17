@@ -342,9 +342,10 @@ RPCHelpMan importdescriptors()
                                 {RPCResult::Type::STR, "", ""},
                             }},
                             {RPCResult::Type::OBJ, "error", /*optional=*/true, "",
-                            {
-                                {RPCResult::Type::ELISION, "", "JSONRPC error"},
-                            }},
+                                ElideGroup({
+                                    {RPCResult::Type::NUM, "code", "JSONRPC error code"},
+                                    {RPCResult::Type::STR, "message", "JSONRPC error message"},
+                                }, "JSONRPC error")},
                         }},
                     }
                 },
