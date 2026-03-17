@@ -388,8 +388,8 @@ std::vector<RPCResult> TxDoc(const TxDocOptions& opts)
         }},
     };
 
-    if (opts.elision_description) {
-        fields = ElideGroup(std::move(fields), *opts.elision_description);
+    if (opts.top_level_elision) {
+        fields = ElideGroup(std::move(fields), *opts.top_level_elision);
     }
 
     return fields;
