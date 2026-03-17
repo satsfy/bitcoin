@@ -60,11 +60,19 @@ CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniVal
 struct TxDocOptions {
     /// Include prevout field
     bool prevout{false};
+    bool prevout_required{false};
+    /// Include fee field
+    bool fee{false};
+    /// Include hex field
+    bool hex{false};
     /// Include wallet-related fields (e.g. ischange on outputs)
     bool wallet{false};
 
     /// Customize a field's doc string
     std::string txid_field_doc{"The transaction id"};
+    std::string vin_item_doc{"utxo being spent"};
+    std::string prevout_doc{"The previous output, omitted if block undo data is not available"};
+    std::optional<std::string> fee_doc{};
 
     /// Elide the entire tx object (top-level fields hidden after summary).
     /// When vin_inner_elision is also set, the vin array is kept visible.
