@@ -627,9 +627,25 @@ std::string RPCResults::ToDescriptionString() const
     return result;
 }
 
+UniValue RPCResults::ToDescriptionValue() const
+{
+    UniValue value(UniValue::VARR);
+
+    for (const auto& result : m_results) {
+        value.push_back(result.ToDescriptionValue());
+    }
+
+    return value;
+}
+
 std::string RPCExamples::ToDescriptionString() const
 {
     return m_examples.empty() ? m_examples : "\nExamples:\n" + m_examples;
+}
+
+UniValue RPCExamples::ToDescriptionValue() const
+{
+    return UniValue(m_examples);
 }
 
 UniValue RPCHelpMan::HandleRequest(const JSONRPCRequest& request) const
@@ -830,6 +846,371 @@ std::string RPCHelpMan::ToString() const
     return ret;
 }
 
+UniValue RPCHelpMan::ToDescriptionValue(const std::string &category) const
+{
+    UniValue value(UniValue::VOBJ);
+
+    value.pushKV("name", m_name);
+    value.pushKV("category", category);
+    value.pushKV("description", TrimString(m_description));
+    value.pushKV("examples", m_examples.ToDescriptionValue());
+
+    UniValue arguments(UniValue::VARR);
+    for (const auto& arg : m_args) {
+        arguments.push_back(arg.ToDescriptionValue());
+    }
+    value.pushKV("arguments", arguments);
+
+    value.pushKV("results", m_results.ToDescriptionValue());
+
+    return value;
+}
+
+static void MaybeAddDescription(UniValue& schema, const std::string& description)
+{
+    if (!description.empty()) {
+        schema.pushKV("description", description);
+    }
+}
+
+static UniValue SchemaFromRPCArg(const RPCArg& arg);
+
+static UniValue SchemaFromRPCResult(const RPCResult& result);
+
+static UniValue SchemaFromRPCArg(const RPCArg& arg)
+{
+    UniValue schema(UniValue::VOBJ);
+
+    switch (arg.m_type) {
+    case RPCArg::Type::OBJ:
+    case RPCArg::Type::OBJ_NAMED_PARAMS: {
+        schema.pushKV("type", "object");
+        UniValue properties(UniValue::VOBJ);
+        UniValue required(UniValue::VARR);
+        for (const auto& inner : arg.m_inner) {
+            const std::string name{inner.GetFirstName()};
+            if (name.empty()) continue;
+            UniValue prop_schema{SchemaFromRPCArg(inner)};
+            if (inner.m_names.find('|') != std::string::npos) {
+                UniValue aliases(UniValue::VARR);
+                for (const auto& alias : SplitString(inner.m_names, '|')) {
+                    if (alias != name) {
+                        aliases.push_back(alias);
+                    }
+                }
+                if (!aliases.empty()) {
+                    prop_schema.pushKV("x-bitcoin-aliases", aliases);
+                }
+            }
+            properties.pushKV(name, prop_schema);
+            if (!inner.IsOptional()) {
+                required.push_back(name);
+            }
+        }
+        schema.pushKV("properties", properties);
+        if (!required.empty()) {
+            schema.pushKV("required", required);
+        }
+        schema.pushKV("additionalProperties", false);
+        if (arg.m_type == RPCArg::Type::OBJ_NAMED_PARAMS) {
+            schema.pushKV("x-bitcoin-obj-named-params", true);
+        }
+        break;
+    }
+    case RPCArg::Type::OBJ_USER_KEYS: {
+        schema.pushKV("type", "object");
+        if (!arg.m_inner.empty()) {
+            schema.pushKV("additionalProperties", SchemaFromRPCArg(arg.m_inner.front()));
+        } else {
+            schema.pushKV("additionalProperties", true);
+        }
+        schema.pushKV("x-bitcoin-obj-user-keys", true);
+        break;
+    }
+    case RPCArg::Type::ARR: {
+        schema.pushKV("type", "array");
+        if (arg.m_inner.size() == 1) {
+            schema.pushKV("items", SchemaFromRPCArg(arg.m_inner.front()));
+        } else if (!arg.m_inner.empty()) {
+            UniValue items(UniValue::VARR);
+            for (const auto& inner : arg.m_inner) {
+                items.push_back(SchemaFromRPCArg(inner));
+            }
+            schema.pushKV("items", items);
+            schema.pushKV("minItems", static_cast<int>(arg.m_inner.size()));
+        }
+        break;
+    }
+    case RPCArg::Type::STR:
+        schema.pushKV("type", "string");
+        break;
+    case RPCArg::Type::NUM:
+        schema.pushKV("type", "number");
+        break;
+    case RPCArg::Type::BOOL:
+        schema.pushKV("type", "boolean");
+        break;
+    case RPCArg::Type::AMOUNT: {
+        UniValue one_of(UniValue::VARR);
+        UniValue num(UniValue::VOBJ);
+        num.pushKV("type", "number");
+        UniValue str(UniValue::VOBJ);
+        str.pushKV("type", "string");
+        one_of.push_back(num);
+        one_of.push_back(str);
+        schema.pushKV("oneOf", one_of);
+        schema.pushKV("x-bitcoin-type", "amount");
+        break;
+    }
+    case RPCArg::Type::STR_HEX:
+        schema.pushKV("type", "string");
+        schema.pushKV("pattern", "^[0-9a-fA-F]*$");
+        schema.pushKV("x-bitcoin-type", "hex");
+        break;
+    case RPCArg::Type::RANGE: {
+        UniValue one_of(UniValue::VARR);
+        UniValue num(UniValue::VOBJ);
+        num.pushKV("type", "number");
+        UniValue arr(UniValue::VOBJ);
+        arr.pushKV("type", "array");
+        UniValue arr_items(UniValue::VOBJ);
+        arr_items.pushKV("type", "number");
+        arr.pushKV("items", arr_items);
+        arr.pushKV("minItems", 2);
+        arr.pushKV("maxItems", 2);
+        one_of.push_back(num);
+        one_of.push_back(arr);
+        schema.pushKV("oneOf", one_of);
+        schema.pushKV("x-bitcoin-type", "range");
+        break;
+    }
+    }
+
+    MaybeAddDescription(schema, arg.m_description);
+
+    if (arg.m_opts.skip_type_check) {
+        schema.pushKV("x-bitcoin-skip-type-check", true);
+    }
+    if (arg.m_opts.hidden) {
+        schema.pushKV("x-bitcoin-hidden", true);
+    }
+    if (!arg.m_opts.oneline_description.empty()) {
+        schema.pushKV("x-bitcoin-oneline-description", arg.m_opts.oneline_description);
+    }
+    if (!arg.m_opts.type_str.empty()) {
+        UniValue type_str(UniValue::VARR);
+        for (const auto& entry : arg.m_opts.type_str) {
+            type_str.push_back(entry);
+        }
+        schema.pushKV("x-bitcoin-type-string", type_str);
+    }
+    if (arg.m_opts.also_positional) {
+        schema.pushKV("x-bitcoin-also-positional", true);
+    }
+
+    if (std::holds_alternative<RPCArg::DefaultHint>(arg.m_fallback)) {
+        schema.pushKV("x-bitcoin-default-hint", std::get<RPCArg::DefaultHint>(arg.m_fallback));
+    } else if (std::holds_alternative<RPCArg::Default>(arg.m_fallback)) {
+        schema.pushKV("default", std::get<RPCArg::Default>(arg.m_fallback));
+    }
+
+    return schema;
+}
+
+static UniValue SchemaFromRPCResult(const RPCResult& result)
+{
+    UniValue schema(UniValue::VOBJ);
+
+    switch (result.m_type) {
+    case RPCResult::Type::OBJ: {
+        schema.pushKV("type", "object");
+        UniValue properties(UniValue::VOBJ);
+        UniValue required(UniValue::VARR);
+        bool allow_additional{false};
+        std::string documentation_commentary;
+        for (const auto& inner : result.m_inner) {
+            if (inner.m_type == RPCResult::Type::ELISION) {
+                allow_additional = true;
+                if (!inner.m_description.empty() && documentation_commentary.empty()) {
+                    documentation_commentary = inner.m_description;
+                }
+                continue;
+            }
+            if (inner.m_key_name.empty()) continue;
+            UniValue prop_schema{SchemaFromRPCResult(inner)};
+            properties.pushKV(inner.m_key_name, prop_schema);
+            if (!inner.m_optional) {
+                required.push_back(inner.m_key_name);
+            }
+        }
+        if (!documentation_commentary.empty()) {
+            schema.pushKV("x-documentation-commentary", documentation_commentary);
+        }
+        schema.pushKV("properties", properties);
+        if (!required.empty()) {
+            schema.pushKV("required", required);
+        }
+        schema.pushKV("additionalProperties", allow_additional);
+        break;
+    }
+    case RPCResult::Type::OBJ_DYN: {
+        schema.pushKV("type", "object");
+        if (!result.m_inner.empty()) {
+            schema.pushKV("additionalProperties", SchemaFromRPCResult(result.m_inner.front()));
+        } else {
+            schema.pushKV("additionalProperties", true);
+        }
+        schema.pushKV("x-bitcoin-object-dynamic", true);
+        break;
+    }
+    case RPCResult::Type::ARR: {
+        schema.pushKV("type", "array");
+        if (result.m_inner.size() == 1) {
+            schema.pushKV("items", SchemaFromRPCResult(result.m_inner.front()));
+        } else if (!result.m_inner.empty()) {
+            UniValue items(UniValue::VARR);
+            for (const auto& inner : result.m_inner) {
+                items.push_back(SchemaFromRPCResult(inner));
+            }
+            schema.pushKV("items", items);
+            schema.pushKV("minItems", static_cast<int>(result.m_inner.size()));
+        }
+        break;
+    }
+    case RPCResult::Type::ARR_FIXED: {
+        schema.pushKV("type", "array");
+        UniValue items(UniValue::VARR);
+        for (const auto& inner : result.m_inner) {
+            items.push_back(SchemaFromRPCResult(inner));
+        }
+        schema.pushKV("items", items);
+        schema.pushKV("minItems", static_cast<int>(result.m_inner.size()));
+        schema.pushKV("maxItems", static_cast<int>(result.m_inner.size()));
+        break;
+    }
+    case RPCResult::Type::STR:
+        schema.pushKV("type", "string");
+        break;
+    case RPCResult::Type::NUM:
+        schema.pushKV("type", "number");
+        break;
+    case RPCResult::Type::BOOL:
+        schema.pushKV("type", "boolean");
+        break;
+    case RPCResult::Type::NONE:
+        schema.pushKV("type", "null");
+        break;
+    case RPCResult::Type::ANY:
+        break;
+    case RPCResult::Type::STR_AMOUNT:
+        schema.pushKV("type", "string");
+        schema.pushKV("x-bitcoin-type", "amount");
+        break;
+    case RPCResult::Type::STR_HEX:
+        schema.pushKV("type", "string");
+        schema.pushKV("pattern", "^[0-9a-fA-F]*$");
+        schema.pushKV("x-bitcoin-type", "hex");
+        break;
+    case RPCResult::Type::NUM_TIME:
+        schema.pushKV("type", "number");
+        schema.pushKV("x-bitcoin-format", "unix-time");
+        break;
+    case RPCResult::Type::ELISION:
+        schema.pushKV("x-bitcoin-elision", true);
+        break;
+    }
+
+    MaybeAddDescription(schema, result.m_description);
+
+    if (!result.m_cond.empty()) {
+        schema.pushKV("x-bitcoin-condition", result.m_cond);
+    }
+    if (result.m_skip_type_check) {
+        schema.pushKV("x-bitcoin-skip-type-check", true);
+    }
+    if (result.m_optional) {
+        schema.pushKV("x-bitcoin-optional", true);
+    }
+
+    return schema;
+}
+
+static UniValue SchemaFromRPCResults(const RPCResults& results)
+{
+    UniValue schemas(UniValue::VARR);
+    for (const auto& result : results.m_results) {
+        if (result.m_type == RPCResult::Type::ANY) continue;
+        schemas.push_back(SchemaFromRPCResult(result));
+    }
+
+    if (schemas.empty()) {
+        return UniValue(UniValue::VOBJ);
+    }
+    if (schemas.size() == 1) {
+        return schemas[0];
+    }
+
+    UniValue schema(UniValue::VOBJ);
+    schema.pushKV("oneOf", schemas);
+    return schema;
+}
+
+static std::string SummaryFromDescription(const std::string& description)
+{
+    const std::string trimmed{TrimString(description)};
+    const auto pos = trimmed.find('\n');
+    return pos == std::string::npos ? trimmed : trimmed.substr(0, pos);
+}
+
+UniValue RPCHelpMan::ToOpenRPCValue(const std::string& category) const
+{
+    UniValue method(UniValue::VOBJ);
+
+    method.pushKV("name", m_name);
+    method.pushKV("summary", SummaryFromDescription(m_description));
+    method.pushKV("description", TrimString(m_description));
+    method.pushKV("paramStructure", "by-position");
+
+    UniValue params(UniValue::VARR);
+    for (const auto& arg : m_args) {
+        UniValue param(UniValue::VOBJ);
+        const std::string name{arg.GetFirstName()};
+        param.pushKV("name", name);
+        param.pushKV("schema", SchemaFromRPCArg(arg));
+        param.pushKV("required", !arg.IsOptional());
+        if (!arg.m_description.empty()) {
+            param.pushKV("description", arg.m_description);
+        }
+        if (arg.m_names.find('|') != std::string::npos) {
+            UniValue aliases(UniValue::VARR);
+            for (const auto& alias : SplitString(arg.m_names, '|')) {
+                if (alias != name) {
+                    aliases.push_back(alias);
+                }
+            }
+            if (!aliases.empty()) {
+                param.pushKV("x-bitcoin-aliases", aliases);
+            }
+        }
+        params.push_back(param);
+    }
+    method.pushKV("params", params);
+
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("name", "result");
+    result.pushKV("schema", SchemaFromRPCResults(m_results));
+    method.pushKV("result", result);
+
+    if (!category.empty()) {
+        method.pushKV("x-bitcoin-category", category);
+    }
+    if (!m_examples.m_examples.empty()) {
+        method.pushKV("x-bitcoin-examples", m_examples.m_examples);
+    }
+
+    return method;
+}
+
 UniValue RPCHelpMan::GetArgMap() const
 {
     UniValue arr{UniValue::VARR};
@@ -993,6 +1374,99 @@ std::string RPCArg::ToDescriptionString(bool is_named_arg) const
     return ret;
 }
 
+const char* RPCArgTypeToDescriptionValue(RPCArg::Type type) {
+    switch (type) {
+        case RPCArg::Type::OBJ:
+            return "object";
+        case RPCArg::Type::ARR:
+            return "array";
+        case RPCArg::Type::STR:
+            return "string";
+        case RPCArg::Type::NUM:
+            return "number";
+        case RPCArg::Type::BOOL:
+            return "boolean";
+        case RPCArg::Type::AMOUNT:
+            return "amount";
+        case RPCArg::Type::STR_HEX:
+            return "hex";
+        case RPCArg::Type::RANGE:
+            return "range";
+        case RPCArg::Type::OBJ_NAMED_PARAMS:
+            return "object-named-parameters";
+        case RPCArg::Type::OBJ_USER_KEYS:
+            return "object-user-keys";
+        default:
+            // todo: don't abort
+            std::abort();
+    }
+}
+
+UniValue RPCArg::ToDescriptionValue() const
+{
+    UniValue value(UniValue::VOBJ);
+
+    value.pushKV("description", m_description);
+
+    UniValue names(UniValue::VARR);
+    if (!m_names.empty()) {
+        for (auto const& name: SplitString(m_names, '|')) {
+            names.push_back(name);
+        }
+    }
+    value.pushKV("names", names);
+
+    UniValue inner(UniValue::VARR);
+    for (auto const& arg: m_inner) {
+        inner.push_back(arg.ToDescriptionValue());
+    }
+    value.pushKV("inner", inner);
+
+    value.pushKV(
+        "optional",
+        !(
+            std::holds_alternative<Optional>(m_fallback)
+            && std::get<Optional>(m_fallback) == Optional::NO
+        )
+    );
+
+    if (std::holds_alternative<DefaultHint>(m_fallback)) {
+        UniValue d(UniValue::VOBJ);
+        d.pushKV("hint", std::get<DefaultHint>(m_fallback));
+        value.pushKV("default", d);
+    } else if (std::holds_alternative<Default>(m_fallback)) {
+        UniValue d(UniValue::VOBJ);
+        d.pushKV("value", std::get<Default>(m_fallback));
+        value.pushKV("default", d);
+    } else if (std::holds_alternative<Optional>(m_fallback)) {
+        UniValue d(UniValue::VNULL);
+        value.pushKV("default", d);
+    } else {
+        // todo: don't abort
+        std::abort();
+    }
+
+    value.pushKV("type", RPCArgTypeToDescriptionValue(m_type));
+
+    value.pushKV("hidden", m_opts.hidden);
+    value.pushKV("skip_type_check", m_opts.skip_type_check);
+    value.pushKV("one_line_description", m_opts.oneline_description);
+    value.pushKV("also_positional", m_opts.also_positional);
+
+    if (m_opts.type_str.size() == 0) {
+        value.pushKV("type_string", UniValue::VNULL);
+    }else if (m_opts.type_str.size() == 2) {
+        UniValue type_string(UniValue::VOBJ);
+        type_string.pushKV("value", m_opts.type_str[0]);
+        type_string.pushKV("description", m_opts.type_str[1]);
+        value.pushKV("type_string", type_string);
+    } else {
+        // todo: don't abort
+        std::abort();
+    }
+
+    return value;
+}
 // NOLINTNEXTLINE(misc-no-recursion)
 void RPCResult::ToSections(Sections& sections, const OuterType outer_type, const int current_indent) const
 {
@@ -1289,6 +1763,62 @@ std::string RPCArg::ToString(const bool oneline) const
     }
     } // no default case, so the compiler can warn about missing cases
     NONFATAL_UNREACHABLE();
+}
+
+const char* RPCResultTypeToDescriptionValue(RPCResult::Type type) {
+    switch (type) {
+        case RPCResult::Type::OBJ:
+            return "object";
+        case RPCResult::Type::ARR:
+            return "array";
+        case RPCResult::Type::STR:
+            return "string";
+        case RPCResult::Type::NUM:
+            return "number";
+        case RPCResult::Type::BOOL:
+            return "boolean";
+        case RPCResult::Type::NONE:
+            // todo: should this be NULL?
+            return "none";
+        case RPCResult::Type::ANY:
+            return "any";
+        case RPCResult::Type::STR_AMOUNT:
+            return "amount";
+        case RPCResult::Type::STR_HEX:
+            return "hex";
+        case RPCResult::Type::OBJ_DYN:
+            return "object-dynamic";
+        case RPCResult::Type::ARR_FIXED:
+            return "array-fixed";
+        case RPCResult::Type::NUM_TIME:
+            return "time";
+        case RPCResult::Type::ELISION:
+            return "elision";
+        default:
+            // todo: don't abort
+            std::abort();
+    }
+}
+
+UniValue RPCResult::ToDescriptionValue() const
+{
+    UniValue value(UniValue::VOBJ);
+
+    value.pushKV("type", RPCResultTypeToDescriptionValue(m_type));
+    value.pushKV("optional", m_optional);
+    value.pushKV("skip_type_checking", m_skip_type_check);
+    value.pushKV("description", m_description);
+    value.pushKV("condition", m_cond);
+    value.pushKV("key_name", m_key_name);
+
+    UniValue inner(UniValue::VARR);
+    for (auto const& result : m_inner) {
+        inner.push_back(result.ToDescriptionValue());
+    }
+    value.pushKV("inner", inner);
+
+    return value;
+
 }
 
 static std::pair<int64_t, int64_t> ParseRange(const UniValue& value)
