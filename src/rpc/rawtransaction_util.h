@@ -59,10 +59,26 @@ CMutableTransaction ConstructTransaction(const UniValue& inputs_in, const UniVal
 struct TxDocOptions {
     /// The description of the txid field
     std::string txid_field_doc{"The transaction id"};
-    /// Include wallet-related fields (e.g. ischange on outputs)
+    /// Include wallet-related fields
     bool wallet{false};
     /// Treat this as an elided Result in the help
     std::optional<std::string> elision_description{};
+    /// Include prevout field
+    bool prevout{false};
+    /// Include fee field
+    bool fee{false};
+    /// Include hex field
+    bool hex{false};
+    /// Custom vin_inner_elision item description
+    std::optional<std::string> vin_item_doc{};
+    /// Custom vin_inner_elision prevout field description
+    std::optional<std::string> prevout_doc{};
+    /// Custom vin_inner_elision fee field description
+    std::optional<std::string> fee_doc{};
+    /// Silently elide all top-level fields with no summary text.
+    bool elision_description_silent{false};
+    /// Elide vin inner fields.
+    std::optional<std::string> vin_inner_elision{};
 };
 /** Explain the UniValue "decoded" transaction object, may include extra fields if processed by wallet **/
 std::vector<RPCResult> TxDoc(const TxDocOptions& opts = {});
