@@ -458,6 +458,7 @@ bool RPCHelpMan::IsValidNumArgs(size_t num_args) const
 }
 std::string RPCHelpMan::ToString() const
 {
+    if (g_capture) g_capture->emplace(m_name, *this);
     std::string ret;
 
     // Oneline summary
@@ -838,3 +839,5 @@ UniValue GetServicesNames(ServiceFlags services)
 
     return servicesNames;
 }
+
+std::unordered_map<std::string, RPCHelpMan>* RPCHelpMan::g_capture = nullptr;
