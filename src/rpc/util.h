@@ -15,6 +15,7 @@
 #include <script/sign.h>
 #include <script/standard.h>
 #include <univalue.h>
+#include <unordered_map>
 
 #include <string>
 #include <vector>
@@ -247,11 +248,15 @@ public:
     std::string ToString() const;
     /** If the supplied number of args is neither too small nor too high */
     bool IsValidNumArgs(size_t num_args) const;
-    /**
-     * Check if the given request is valid according to this command or if
-     * the user is asking for help information, and throw help when appropriate.
-     */
+    const std::string& GetName() const { return m_name; }
+    const std::string& GetDescription() const { return m_description; }
+    const std::vector<RPCArg>& GetArgs() const { return m_args; }
+    const RPCResults& GetResults() const { return m_results; }
+    static std::unordered_map<std::string, RPCHelpMan>* g_capture;
     inline void Check(const JSONRPCRequest& request) const {
+        if (g_capture) {
+            g_capture->emplace(m_name, *this);
+        }
         if (request.fHelp || !IsValidNumArgs(request.params.size())) {
             throw std::runtime_error(ToString());
         }
