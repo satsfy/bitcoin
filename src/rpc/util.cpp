@@ -783,7 +783,8 @@ void RPCResult::ToSections(Sections& sections, const OuterType outer_type, const
         return;
     }
     case Type::ANY: {
-        CHECK_NONFATAL(false); // Only for testing
+        sections.PushSection({indent + "any" + maybe_separator, Description("json any")});
+        return;
     }
     case Type::NONE: {
         sections.PushSection({indent + "null" + maybe_separator, Description("json null")});
