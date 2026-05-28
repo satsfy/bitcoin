@@ -340,6 +340,7 @@ bool RPCHelpMan::IsValidNumArgs(size_t num_args) const
 }
 std::string RPCHelpMan::ToString() const
 {
+    if (g_capture) g_capture->emplace(m_name, *this);
     std::string ret;
 
     // Oneline summary
@@ -557,3 +558,5 @@ std::pair<int64_t, int64_t> ParseRange(const UniValue& value)
     }
     throw JSONRPCError(RPC_INVALID_PARAMETER, "Range must be specified as end or as [begin,end]");
 }
+
+std::unordered_map<std::string, RPCHelpMan>* RPCHelpMan::g_capture = nullptr;

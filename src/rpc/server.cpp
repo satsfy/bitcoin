@@ -4,6 +4,10 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <rpc/server.h>
+#include <clientversion.h>
+#include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <fs.h>
 #include <key_io.h>
@@ -330,10 +334,121 @@ static UniValue getrpcinfo(const JSONRPCRequest& request)
 }
 
 // clang-format off
+namespace {
+
+void PushUniqueSchema(UniValue& arr, std::unordered_set<std::string>& seen, UniValue&& v)
+{
+    std::string key{v.write()};
+    if (seen.insert(key).second) {
+        arr.push_back(std::move(v));
+    }
+}
+
+UniValue OpenRPCArgSchema(const RPCArg& arg);
+
+// NOLINTNEXTLINE(misc-no-recursion)
+UniValue DedupArrayItemsSchema(const std::vector<RPCArg>& inner)
+{
+    if (inner.empty()) return UniValue{UniValue::VOBJ};
+    if (inner.size() == 1) return OpenRPCArgSchema(inner.front());
+
+    UniValue one_of{UniValue::VARR};
+    std::unordered_set<std::string> seen;
+    for (const auto& item : inner) {
+        PushUniqueSchema(one_of, seen, OpenRPCArgSchema(item));
+    }
+    if (one_of.size() == 1) return one_of[0];
+    UniValue items{UniValue::VOBJ};
+    items.pushKV("oneOf", std::move(one_of));
+    return items;
+}
+
+// NOLINTNEXTLINE(misc-no-recursion)
+UniValue OpenRPCArgSchema(const RPCArg& arg)
+{
+    UniValue schema{UniValue::VOBJ};
+    switch (arg.m_type) {
+    case RPCArg::Type::STR:
+    case RPCArg::Type::STR_HEX:
+        schema.pushKV("type", "string");
+        return schema;
+    case RPCArg::Type::NUM:
+        schema.pushKV("type", "number");
+        return schema;
+    case RPCArg::Type::AMOUNT:
+        schema.pushKV("oneOf", []{ UniValue a{UniValue::VARR};
+            UniValue n{UniValue::VOBJ}; n.pushKV("type","number"); a.push_back(std::move(n));
+            UniValue s{UniValue::VOBJ}; s.pushKV("type","string"); a.push_back(std::move(s));
+            return a; }());
+        return schema;
+    case RPCArg::Type::BOOL:
+        schema.pushKV("type", "boolean");
+        return schema;
+    case RPCArg::Type::RANGE:
+        schema.pushKV("oneOf", []{ UniValue a{UniValue::VARR};
+            UniValue n{UniValue::VOBJ}; n.pushKV("type","number"); a.push_back(std::move(n));
+            UniValue ar{UniValue::VOBJ}; ar.pushKV("type","array");
+            UniValue it{UniValue::VOBJ}; it.pushKV("type","number"); ar.pushKV("items", std::move(it));
+            ar.pushKV("minItems", uint64_t(2)); ar.pushKV("maxItems", uint64_t(2));
+            a.push_back(std::move(ar));
+            return a; }());
+        return schema;
+    case RPCArg::Type::ARR: {
+        UniValue items{DedupArrayItemsSchema(arg.m_inner)};
+        schema.pushKV("type", "array");
+        schema.pushKV("items", std::move(items));
+        return schema;
+    }
+    case RPCArg::Type::OBJ: {
+        UniValue properties{UniValue::VOBJ};
+        UniValue required{UniValue::VARR};
+        for (const auto& inner : arg.m_inner) {
+            if (inner.m_name.empty()) continue;
+            UniValue prop{OpenRPCArgSchema(inner)};
+            if (!inner.m_description.empty()) prop.pushKV("description", inner.m_description);
+            properties.pushKV(inner.m_name, std::move(prop));
+            if (!inner.IsOptional()) required.push_back(inner.m_name);
+        }
+        schema.pushKV("type", "object");
+        schema.pushKV("properties", std::move(properties));
+        if (!required.empty()) schema.pushKV("required", std::move(required));
+        return schema;
+    }
+    case RPCArg::Type::OBJ_USER_KEYS: {
+        schema.pushKV("type", "object");
+        if (!arg.m_inner.empty()) {
+            schema.pushKV("additionalProperties", OpenRPCArgSchema(arg.m_inner[0]));
+        }
+        return schema;
+    }
+    }
+    return UniValue{UniValue::VOBJ};
+}
+
+} // namespace
+
+static UniValue getopenrpcinfo(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 0) {
+        throw std::runtime_error(
+            RPCHelpMan{"getopenrpcinfo",
+                "\nReturns an OpenRPC document for currently available RPC commands.\n",
+                {},
+                RPCResults{},
+                RPCExamples{
+                    HelpExampleCli("getopenrpcinfo", "")
+                    + HelpExampleRpc("getopenrpcinfo", "")
+                },
+            }.ToString());
+    }
+    return tableRPC.buildOpenRPCDoc();
+}
+
 static const CRPCCommand vRPCCommands[] =
 { //  category              name                      actor (function)         argNames
   //  --------------------- ------------------------  -----------------------  ----------
     /* Overall control/query calls */
+    { "control",            "getopenrpcinfo",             &getopenrpcinfo,             {}  },
     { "control",            "getrpcinfo",             &getrpcinfo,             {}  },
     { "control",            "help",                   &help,                   {"command"}  },
     { "control",            "stop",                   &stop,                   {"wait"}  },
@@ -573,6 +688,89 @@ UniValue CRPCTable::execute(const JSONRPCRequest &request) const
     {
         throw JSONRPCError(RPC_MISC_ERROR, e.what());
     }
+}
+
+UniValue CRPCTable::buildOpenRPCDoc() const
+{
+    std::unordered_map<std::string, RPCHelpMan> capture;
+    RPCHelpMan::g_capture = &capture;
+
+    for (std::map<std::string, const CRPCCommand*>::const_iterator it = mapCommands.begin(); it != mapCommands.end(); ++it) {
+        const CRPCCommand* cmd = it->second;
+        if (!cmd || cmd->category == "hidden") continue;
+        JSONRPCRequest req;
+        req.fHelp = true;
+        req.params = UniValue(UniValue::VARR);
+        req.strMethod = it->first;
+        try {
+            cmd->actor(req);
+        } catch (...) {
+            // expected
+        }
+    }
+    RPCHelpMan::g_capture = nullptr;
+
+    std::unordered_map<std::string, std::string> name_to_cat;
+    for (std::map<std::string, const CRPCCommand*>::const_iterator it = mapCommands.begin(); it != mapCommands.end(); ++it) {
+        if (!it->second || it->second->category == "hidden") continue;
+        name_to_cat[it->first] = it->second->category;
+    }
+
+    UniValue methods{UniValue::VARR};
+    std::vector<std::string> ordered_names;
+    ordered_names.reserve(capture.size());
+    for (std::unordered_map<std::string, RPCHelpMan>::const_iterator it = capture.begin(); it != capture.end(); ++it) {
+        ordered_names.push_back(it->first);
+    }
+    std::sort(ordered_names.begin(), ordered_names.end());
+
+    for (size_t i = 0; i < ordered_names.size(); ++i) {
+        const std::string& name = ordered_names[i];
+        const RPCHelpMan& helpman = capture.find(name)->second;
+        UniValue method{UniValue::VOBJ};
+        method.pushKV("name", name);
+        method.pushKV("description", helpman.GetDescription());
+
+        UniValue params{UniValue::VARR};
+        for (size_t j = 0; j < helpman.GetArgs().size(); ++j) {
+            const RPCArg& arg = helpman.GetArgs()[j];
+            UniValue param{UniValue::VOBJ};
+            param.pushKV("name", arg.m_name);
+            param.pushKV("required", !arg.IsOptional());
+            param.pushKV("schema", OpenRPCArgSchema(arg));
+            if (!arg.m_description.empty()) param.pushKV("description", arg.m_description);
+            params.push_back(std::move(param));
+        }
+        method.pushKV("params", std::move(params));
+
+        UniValue result_obj{UniValue::VOBJ};
+        result_obj.pushKV("name", std::string{"result"});
+        UniValue schema{UniValue::VOBJ};
+        std::string desc;
+        const std::vector<RPCResult>& results = helpman.GetResults().m_results;
+        for (size_t j = 0; j < results.size(); ++j) {
+            if (!desc.empty()) desc += "\n";
+            if (!results[j].m_cond.empty()) desc += "if " + results[j].m_cond + ": ";
+            desc += results[j].m_result;
+        }
+        if (!desc.empty()) schema.pushKV("description", desc);
+        result_obj.pushKV("schema", std::move(schema));
+        method.pushKV("result", std::move(result_obj));
+
+        std::unordered_map<std::string, std::string>::const_iterator cat_it = name_to_cat.find(name);
+        method.pushKV("x-bitcoin-category", cat_it != name_to_cat.end() ? cat_it->second : std::string{});
+        methods.push_back(std::move(method));
+    }
+
+    UniValue doc{UniValue::VOBJ};
+    doc.pushKV("openrpc", "1.3.2");
+    UniValue info{UniValue::VOBJ};
+    info.pushKV("title", "Bitcoin Core JSON-RPC");
+    info.pushKV("version", FormatFullVersion());
+    info.pushKV("description", "Autogenerated from Bitcoin Core RPC metadata.");
+    doc.pushKV("info", std::move(info));
+    doc.pushKV("methods", std::move(methods));
+    return doc;
 }
 
 std::vector<std::string> CRPCTable::listCommands() const

@@ -11,6 +11,7 @@
 #include <rpc/protocol.h>
 #include <script/standard.h>
 #include <univalue.h>
+#include <unordered_map>
 
 #include <string>
 #include <vector>
@@ -195,6 +196,11 @@ public:
     std::string ToString() const;
     /** If the supplied number of args is neither too small nor too high */
     bool IsValidNumArgs(size_t num_args) const;
+    const std::string& GetName() const { return m_name; }
+    const std::string& GetDescription() const { return m_description; }
+    const std::vector<RPCArg>& GetArgs() const { return m_args; }
+    const RPCResults& GetResults() const { return m_results; }
+    static std::unordered_map<std::string, RPCHelpMan>* g_capture;
 
 private:
     const std::string m_name;

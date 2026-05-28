@@ -162,6 +162,7 @@ public:
     * @returns List of registered commands.
     */
     std::vector<std::string> listCommands() const;
+    UniValue buildOpenRPCDoc() const;
 
 
     /**
