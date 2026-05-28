@@ -503,6 +503,7 @@ public:
             m_rpc_commands.emplace_back(command.category, command.name, [this, &command](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
                 return command.actor({request, m_context}, result, last_handler);
             }, command.argNames, command.unique_id);
+            m_rpc_commands.back().metadata_fn = command.metadata_fn;
             m_rpc_handlers.emplace_back(m_context.chain->handleRpc(m_rpc_commands.back()));
         }
     }

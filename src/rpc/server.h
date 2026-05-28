@@ -114,6 +114,7 @@ public:
     {
         CHECK_NONFATAL(fn().m_name == name_in);
         CHECK_NONFATAL(fn().GetArgNames() == args_in);
+        this->metadata_fn = fn;
     }
 
     //! Simplified constructor taking plain rpcfn_type function pointer.
@@ -129,6 +130,7 @@ public:
     Actor actor;
     std::vector<std::string> argNames;
     intptr_t unique_id;
+    RpcMethodFnType metadata_fn{nullptr};
 };
 
 /**
@@ -155,6 +157,8 @@ public:
     * @returns List of registered commands.
     */
     std::vector<std::string> listCommands() const;
+    /** Return a complete OpenRPC 1.3.2 document for all registered commands. */
+    UniValue buildOpenRPCDoc() const;
 
 
     /**

@@ -356,6 +356,10 @@ public:
 
     std::vector<std::string> GetArgNames() const;
 
+    const std::vector<RPCArg>& GetArgs() const { return m_args; }
+    const RPCResults& GetResults() const { return m_results; }
+    const std::string& GetDescription() const { return m_description; }
+
     const std::string m_name;
 
 private:
