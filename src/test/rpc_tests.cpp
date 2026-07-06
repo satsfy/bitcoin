@@ -45,6 +45,88 @@ UniValue RPCTestingSetup::CallRPC(std::string args)
 
 BOOST_FIXTURE_TEST_SUITE(rpc_tests, RPCTestingSetup)
 
+BOOST_AUTO_TEST_CASE(rpc_namedparams)
+{
+    const std::vector<std::pair<std::string, bool>> arg_names{{"arg1", false}, {"arg2", false}, {"arg3", false}, {"arg4", false}, {"arg5", false}};
+
+    // Make sure named arguments are transformed into positional arguments in correct places separated by nulls
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"({"arg2": 2, "arg4": 4})"), arg_names).write(), "[null,2,null,4]");
+
+    // Make sure named argument specified multiple times raises an exception
+    BOOST_CHECK_EXCEPTION(TransformParams(JSON(R"({"arg2": 2, "arg2": 4})"), arg_names), UniValue,
+                          HasJSON(R"({"code":-8,"message":"Parameter arg2 specified multiple times"})"));
+
+    // Make sure named and positional arguments can be combined.
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"({"arg5": 5, "args": [1, 2], "arg4": 4})"), arg_names).write(), "[1,2,null,4,5]");
+
+    // Make sure a unknown named argument raises an exception
+    BOOST_CHECK_EXCEPTION(TransformParams(JSON(R"({"arg2": 2, "unknown": 6})"), arg_names), UniValue,
+                          HasJSON(R"({"code":-8,"message":"Unknown named parameter unknown"})"));
+
+    // Make sure an overlap between a named argument and positional argument raises an exception
+    BOOST_CHECK_EXCEPTION(TransformParams(JSON(R"({"args": [1,2,3], "arg4": 4, "arg2": 2})"), arg_names), UniValue,
+                          HasJSON(R"({"code":-8,"message":"Parameter arg2 specified twice both as positional and named argument"})"));
+
+    // Make sure extra positional arguments can be passed through to the method implementation, as long as they don't overlap with named arguments.
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"({"args": [1,2,3,4,5,6,7,8,9,10]})"), arg_names).write(), "[1,2,3,4,5,6,7,8,9,10]");
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"([1,2,3,4,5,6,7,8,9,10])"), arg_names).write(), "[1,2,3,4,5,6,7,8,9,10]");
+}
+
+BOOST_AUTO_TEST_CASE(rpc_namedonlyparams)
+{
+    const std::vector<std::pair<std::string, bool>> arg_names{{"arg1", false}, {"arg2", false}, {"opt1", true}, {"opt2", true}, {"options", false}};
+
+    // Make sure optional parameters are really optional.
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"({"arg1": 1, "arg2": 2})"), arg_names).write(), "[1,2]");
+
+    // Make sure named-only parameters are passed as options.
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"({"arg1": 1, "arg2": 2, "opt1": 10, "opt2": 20})"), arg_names).write(), R"([1,2,{"opt1":10,"opt2":20}])");
+
+    // Make sure options can be passed directly.
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"({"arg1": 1, "arg2": 2, "options":{"opt1": 10, "opt2": 20}})"), arg_names).write(), R"([1,2,{"opt1":10,"opt2":20}])");
+
+    // Make sure options and named parameters conflict.
+    BOOST_CHECK_EXCEPTION(TransformParams(JSON(R"({"arg1": 1, "arg2": 2, "opt1": 10, "options":{"opt1": 10}})"), arg_names), UniValue,
+                          HasJSON(R"({"code":-8,"message":"Parameter options conflicts with parameter opt1"})"));
+
+    // Make sure options object specified through args array conflicts.
+    BOOST_CHECK_EXCEPTION(TransformParams(JSON(R"({"args": [1, 2, {"opt1": 10}], "opt2": 20})"), arg_names), UniValue,
+                          HasJSON(R"({"code":-8,"message":"Parameter options specified twice both as positional and named argument"})"));
+}
+
+BOOST_AUTO_TEST_CASE(rpc_remove_command_cleans_up_empty_entry)
+{
+    CRPCTable table;
+    RpcMethodFnType method{
+        []() -> RPCHelpMan {
+            return RPCHelpMan{
+                "method",
+                "Test RPC method.\n",
+                {},
+                RPCResult{RPCResult::Type::STR, "", ""},
+                RPCExamples{""},
+                [](const RPCHelpMan&, const JSONRPCRequest&) -> UniValue { return "ok"; },
+            };
+        }
+    };
+    CRPCCommand command{"test", method};
+
+    table.appendCommand(command.name, &command);
+    BOOST_CHECK(table.removeCommand(command.name, &command));
+
+    bool found{false};
+    for (const auto& name : table.listCommands()) {
+        if (name == command.name) {
+            found = true;
+            break;
+        }
+    }
+    BOOST_CHECK(!found);
+
+    UniValue doc{table.buildOpenRPCDoc()};
+    BOOST_CHECK(doc.isObject());
+}
+
 BOOST_AUTO_TEST_CASE(rpc_rawparams)
 {
     // Test raw transaction API argument handling
