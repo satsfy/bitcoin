@@ -109,6 +109,61 @@ BOOST_AUTO_TEST_CASE(rpc_namedparams)
     BOOST_CHECK_EQUAL(TransformParams(JSON(R"([1,2,3,4,5,6,7,8,9,10])"), arg_names).write(), "[1,2,3,4,5,6,7,8,9,10]");
 }
 
+BOOST_AUTO_TEST_CASE(rpc_namedonlyparams)
+{
+    const std::vector<std::pair<std::string, bool>> arg_names{{"arg1", false}, {"arg2", false}, {"opt1", true}, {"opt2", true}, {"options", false}};
+
+    // Make sure optional parameters are really optional.
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"({"arg1": 1, "arg2": 2})"), arg_names).write(), "[1,2]");
+
+    // Make sure named-only parameters are passed as options.
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"({"arg1": 1, "arg2": 2, "opt1": 10, "opt2": 20})"), arg_names).write(), R"([1,2,{"opt1":10,"opt2":20}])");
+
+    // Make sure options can be passed directly.
+    BOOST_CHECK_EQUAL(TransformParams(JSON(R"({"arg1": 1, "arg2": 2, "options":{"opt1": 10, "opt2": 20}})"), arg_names).write(), R"([1,2,{"opt1":10,"opt2":20}])");
+
+    // Make sure options and named parameters conflict.
+    BOOST_CHECK_EXCEPTION(TransformParams(JSON(R"({"arg1": 1, "arg2": 2, "opt1": 10, "options":{"opt1": 10}})"), arg_names), UniValue,
+                          HasJSON(R"({"code":-8,"message":"Parameter options conflicts with parameter opt1"})"));
+
+    // Make sure options object specified through args array conflicts.
+    BOOST_CHECK_EXCEPTION(TransformParams(JSON(R"({"args": [1, 2, {"opt1": 10}], "opt2": 20})"), arg_names), UniValue,
+                          HasJSON(R"({"code":-8,"message":"Parameter options specified twice both as positional and named argument"})"));
+}
+
+BOOST_AUTO_TEST_CASE(rpc_remove_command_cleans_up_empty_entry)
+{
+    CRPCTable table;
+    RpcMethodFnType method{
+        []() -> RPCHelpMan {
+            return RPCHelpMan{
+                "method",
+                "Test RPC method.\n",
+                {},
+                RPCResult{RPCResult::Type::STR, "", ""},
+                RPCExamples{""},
+                [](const RPCHelpMan&, const JSONRPCRequest&) -> UniValue { return "ok"; },
+            };
+        }
+    };
+    CRPCCommand command{"test", method};
+
+    table.appendCommand(command.name, &command);
+    BOOST_CHECK(table.removeCommand(command.name, &command));
+
+    bool found{false};
+    for (const auto& name : table.listCommands()) {
+        if (name == command.name) {
+            found = true;
+            break;
+        }
+    }
+    BOOST_CHECK(!found);
+
+    UniValue doc{table.buildOpenRPCDoc()};
+    BOOST_CHECK(doc.isObject());
+}
+
 BOOST_AUTO_TEST_CASE(rpc_rawparams)
 {
     // Test raw transaction API argument handling

@@ -126,9 +126,11 @@ enum class OuterType {
 };
 
 struct RPCArgOptions {
+    bool also_positional{false};
     bool skip_type_check{false};
     std::string oneline_description{};   //!< Should be empty unless it is supposed to override the auto-generated summary line
     std::vector<std::string> type_str{}; //!< Should be empty unless it is supposed to override the auto-generated type strings. Vector length is either 0 or 2, m_opts.type_str.at(0) will override the type of the value in a key-value pair, m_opts.type_str.at(1) will override the type in the argument description.
+    bool placeholder{false};             //!< If set, the argument is retained only for compatibility and should generally be omitted.
     bool hidden{false};                  //!< For testing only
 };
 
@@ -370,6 +372,9 @@ public:
     /** If the supplied number of args is neither too small nor too high */
     bool IsValidNumArgs(size_t num_args) const;
     std::vector<std::string> GetArgNames() const;
+    const std::string& GetDescription() const { return m_description; }
+    const std::vector<RPCArg>& GetArgs() const { return m_args; }
+    const RPCResults& GetResults() const { return m_results; }
 
     const std::string m_name;
 
